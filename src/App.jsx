@@ -17,36 +17,31 @@ const STOCKS = {
 const ANALYZE_URL = "https://zfeslcgqvlwukyupvcis.supabase.co/functions/v1/smooth-endpoint";
 
 async function fetchYahoo(symbol) {
-  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=6mo`;
-  const proxies = [
-    `https://corsproxy.io/?url=${encodeURIComponent(yahooUrl)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
-  ];
-  let lastErr;
-  for (const url of proxies) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(9000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const r = json.chart?.result?.[0];
-      if (!r) throw new Error("No result");
-      const q = r.indicators.quote[0];
-      const meta = r.meta;
-      const data = r.timestamp
-        .map((t, i) => {
-          const d = new Date(t * 1000);
-          return { date: `${d.getMonth()+1}/${d.getDate()}`, open: q.open[i]??0, high: q.high[i]??0, close: q.close[i], low: q.low[i]??0, volume: q.volume[i]||0 };
-        })
-        .filter(d => d.close != null && !isNaN(d.close));
-      return {
-        data,
-        currentPrice: meta.regularMarketPrice ?? null,
-        dayChange: meta.regularMarketChange ?? null,
-        dayChangePct: meta.regularMarketChangePercent ?? null,
-      };
-    } catch(e) { lastErr = e; }
-  }
-  throw lastErr;
+  // Supabase 서버사이드로 가져와서 CORS 문제 없음
+  const res = await fetch(ANALYZE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "stock", symbol }),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  const r = json.chart?.result?.[0];
+  if (!r) throw new Error("No result");
+  const q = r.indicators.quote[0];
+  const meta = r.meta;
+  const data = r.timestamp
+    .map((t, i) => {
+      const d = new Date(t * 1000);
+      return { date: `${d.getMonth()+1}/${d.getDate()}`, open: q.open[i]??0, high: q.high[i]??0, close: q.close[i], low: q.low[i]??0, volume: q.volume[i]||0 };
+    })
+    .filter(d => d.close != null && !isNaN(d.close));
+  return {
+    data,
+    currentPrice: meta.regularMarketPrice ?? null,
+    dayChange: meta.regularMarketChange ?? null,
+    dayChangePct: meta.regularMarketChangePercent ?? null,
+  };
 }
 
 async function fetchIndices() {
