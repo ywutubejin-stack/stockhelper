@@ -21,7 +21,7 @@ const STOCKS = {
 
 // ─── Supabase Edge Function URL (빌드 시 주입) ──────────────────────────────
 // GitHub Secrets > VITE_ANALYZE_URL 에 설정
-const ANALYZE_URL = import.meta.env.VITE_ANALYZE_URL ?? "";
+const ANALYZE_URL = "https://zfeslcgqylwukyupvcis.supabase.co/functions/v1/analyze";
 
 // ─── YAHOO FINANCE ────────────────────────────────────────────────────────────
 async function fetchYahoo(symbol) {
