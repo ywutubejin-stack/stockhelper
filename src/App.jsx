@@ -46,10 +46,12 @@ async function fetchYahoo(symbol) {
 
 async function fetchIndices() {
   try {
-    const [k, n] = await Promise.all([fetchYahoo("^KS11"), fetchYahoo("^IXIC")]);
+    const [k, n] = await Promise.allSettled([fetchYahoo("^KS11"), fetchYahoo("^IXIC")]);
+    const kv = k.status === "fulfilled" ? k.value : null;
+    const nv = n.status === "fulfilled" ? n.value : null;
     return {
-      kospi:  { value: k.currentPrice, pct: k.dayChangePct },
-      nasdaq: { value: n.currentPrice, pct: n.dayChangePct },
+      kospi:  kv ? { value: kv.currentPrice, pct: kv.dayChangePct } : null,
+      nasdaq: nv ? { value: nv.currentPrice, pct: nv.dayChangePct } : null,
     };
   } catch { return null; }
 }
