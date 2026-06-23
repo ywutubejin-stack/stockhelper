@@ -290,7 +290,10 @@ export default function App() {
     if (!l || !sigs) return;
     setAiLoading(true); setAnalysis(null);
     try {
-      const systemPrompt = `당신은 전문 주식 애널리스트입니다. 한국어로 분석해주세요.\n반드시 아래 JSON만 반환 (마크다운 없이):\n{"news":[{"title":"...","sentiment":"positive|negative|neutral","impact":"..."}],"macro":["..."],"risks":["..."],"catalysts":["..."],"recommendation":"BUY|SELL|HOLD","targetPrice":"...","confidence":75,"reasoning":"..."}`;
+      const systemPrompt = `당신은 전문 주식 애널리스트입니다. 한국어로 분석해주세요.
+반드시 아래 JSON만 반환 (마크다운 없이, 코드블록 없이):
+{"events":[{"date":"날짜 또는 기간","title":"이벤트명","impact":"positive|negative|neutral","detail":"상세설명"}],"news":[{"title":"...","sentiment":"positive|negative|neutral","impact":"..."}],"macro":["..."],"risks":["..."],"catalysts":["..."],"recommendation":"BUY|SELL|HOLD","targetPrice":"...","confidence":75,"reasoning":"..."}
+events에는 실적발표일, 지수편입일정, 락업해제, 배당일, 주주총회, 신제품출시, 규제이슈 등 주가에 영향을 줄 수 있는 향후 주요 일정을 최대 6개 포함하세요.`;
       const prompt = `${stock.name}(${stock.symbol}) 분석. 현재가: ${stock.fmt(currentPrice)} | 전일비: ${pSign(safePct)}${nf(safePct)}%${stock.purchase?` | 매수가: ${stock.fmt(purchasePrice)} (${nf((currentPrice/stock.purchase-1)*100)}%)`:""}. RSI: ${l.rsi} | 매수신호: ${sigs.bullPct}%. 최신 동향과 매수/매도/관망 의견.`;
       const res = await fetch(ANALYZE_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, systemPrompt }) });
       const { text, error } = await res.json();
@@ -547,6 +550,36 @@ export default function App() {
             )}
             {analysis && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {/* 주요 일정 */}
+                {analysis.events?.length > 0 && (
+                  <div style={{ background: "#1a1d27", borderRadius: 10, border: "1px solid #2d3040", padding: "12px 14px" }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#e0e6ed", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                      📅 주요 일정
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {analysis.events.map((e, i) => (
+                        <div key={i} style={{
+                          display: "flex", gap: 10, alignItems: "flex-start",
+                          padding: "7px 10px", borderRadius: 8,
+                          background: e.impact === "positive" ? "rgba(34,197,94,0.06)" : e.impact === "negative" ? "rgba(239,68,68,0.06)" : "rgba(255,255,255,0.03)",
+                          border: `1px solid ${e.impact === "positive" ? "rgba(34,197,94,0.2)" : e.impact === "negative" ? "rgba(239,68,68,0.2)" : "rgba(255,255,255,0.06)"}`,
+                        }}>
+                          <div style={{ flexShrink: 0, minWidth: 52, fontSize: 10, fontWeight: 600,
+                            color: e.impact === "positive" ? "#22c55e" : e.impact === "negative" ? "#ef4444" : "#f59e0b",
+                            paddingTop: 1 }}>{e.date}</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "#e0e6ed", lineHeight: 1.4 }}>{e.title}</div>
+                            {e.detail && <div style={{ fontSize: 11, color: "#7c8599", marginTop: 2, lineHeight: 1.5 }}>{e.detail}</div>}
+                          </div>
+                          <div style={{ flexShrink: 0, fontSize: 14 }}>
+                            {e.impact === "positive" ? "🟢" : e.impact === "negative" ? "🔴" : "🟡"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ background: `rgba(${analysis.recommendation==="BUY"?"34,197,94":analysis.recommendation==="SELL"?"239,68,68":"245,158,11"},0.07)`, border: `1px solid ${recColor}35`, borderRadius: 10, padding: "12px 14px" }}>
                   <div style={{ fontSize: 17, fontWeight: 700, color: recColor, textAlign: "center" }}>{analysis.recommendation==="BUY"?"🟢 매수 (BUY)":analysis.recommendation==="SELL"?"🔴 매도 (SELL)":"🟡 관망 (HOLD)"}</div>
                   <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 5, fontSize: 11, color: "#7c8599" }}>
