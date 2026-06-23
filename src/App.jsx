@@ -9,7 +9,7 @@ const makeFmt = (currency) => currency === "KRW"
 
 const DEFAULT_STOCKS = {
   "005930.KS": { name: "삼성전자",   symbol: "005930.KS", currency: "KRW", base: 356000, vol: 0.025, trend: 0.001,  purchase: null },
-  "SPCX":      { name: "SpaceX",     symbol: "SPCX",       currency: "USD", base: 196,    vol: 0.024, trend: -0.001, purchase: 212  },
+  "SPCX":      { name: "SpaceX",     symbol: "SPCX",       currency: "USD", base: 196,    vol: 0.024, trend: -0.001, purchase: null },
 };
 
 const POPULAR = [
@@ -118,8 +118,22 @@ export default function App() {
   const [addSymbol, setAddSymbol] = useState("");
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState("");
+  const [purchasePrices, setPurchasePrices] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("sa_purchases") || "{}"); } catch { return {}; }
+  });
+  const [inputPurchase, setInputPurchase] = useState("");
 
   const stock = stocks[sel] || Object.values(stocks)[0];
+  const purchasePrice = purchasePrices[sel] ?? null;
+
+  const savePurchasePrice = (val) => {
+    const price = val === "" || val == null ? null : Number(val);
+    const updated = { ...purchasePrices };
+    if (price == null || isNaN(price)) { delete updated[sel]; }
+    else { updated[sel] = price; }
+    setPurchasePrices(updated);
+    localStorage.setItem("sa_purchases", JSON.stringify(updated));
+  };
 
   // ── 주가 로드 ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -152,6 +166,11 @@ export default function App() {
         setChart(cd); setSigs(computeSignals(cd));
         setDataStatus("mock");
       });
+  }, [sel]);
+
+  // ── sel 변경 시 매수가 인풋 업데이트 ─────────────────────────────────
+  useEffect(() => {
+    setInputPurchase(purchasePrices[sel] != null ? String(purchasePrices[sel]) : "");
   }, [sel]);
 
   // ── 지수 로드 ──────────────────────────────────────────────────────────
@@ -231,7 +250,7 @@ export default function App() {
     setAiLoading(true); setAnalysis(null);
     try {
       const systemPrompt = `당신은 전문 주식 애널리스트입니다. 한국어로 분석해주세요.\n반드시 아래 JSON만 반환 (마크다운 없이):\n{"news":[{"title":"...","sentiment":"positive|negative|neutral","impact":"..."}],"macro":["..."],"risks":["..."],"catalysts":["..."],"recommendation":"BUY|SELL|HOLD","targetPrice":"...","confidence":75,"reasoning":"..."}`;
-      const prompt = `${stock.name}(${stock.symbol}) 분석. 현재가: ${stock.fmt(currentPrice)} | 전일비: ${pSign(safePct)}${nf(safePct)}%${stock.purchase?` | 매수가: ${stock.fmt(stock.purchase)} (${nf((currentPrice/stock.purchase-1)*100)}%)`:""}. RSI: ${l.rsi} | 매수신호: ${sigs.bullPct}%. 최신 동향과 매수/매도/관망 의견.`;
+      const prompt = `${stock.name}(${stock.symbol}) 분석. 현재가: ${stock.fmt(currentPrice)} | 전일비: ${pSign(safePct)}${nf(safePct)}%${stock.purchase?` | 매수가: ${stock.fmt(purchasePrice)} (${nf((currentPrice/stock.purchase-1)*100)}%)`:""}. RSI: ${l.rsi} | 매수신호: ${sigs.bullPct}%. 최신 동향과 매수/매도/관망 의견.`;
       const res = await fetch(ANALYZE_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, systemPrompt }) });
       const { text, error } = await res.json();
       if (error) throw new Error(error);
@@ -295,9 +314,9 @@ export default function App() {
             <span style={{ color: safePct >= 0 ? "#22c55e" : "#ef4444", fontWeight: 600, fontSize: 13 }}>
               {safePct >= 0 ? "▲" : "▼"} {stock?.currency === "KRW" ? Math.abs(Math.round(safeAbs)).toLocaleString("ko-KR") : Math.abs(safeAbs).toFixed(2)} ({Math.abs(safePct).toFixed(2)}%)
             </span>
-            {stock?.purchase && currentPrice > 0 && (
+            {purchasePrice != null && currentPrice > 0 && (
               <span style={{ fontSize: 12, color: "#7c8599" }}>
-                매수가 {stock.fmt(stock.purchase)} | <span style={{ color: currentPrice >= stock.purchase ? "#22c55e" : "#ef4444", fontWeight: 600 }}>{nf((currentPrice / stock.purchase - 1) * 100)}% {currentPrice >= stock.purchase ? "이익" : "손실"}</span>
+                매수가 {stock.fmt(purchasePrice)} | <span style={{ color: currentPrice >= purchasePrice ? "#22c55e" : "#ef4444", fontWeight: 600 }}>{nf((currentPrice / purchasePrice - 1) * 100)}% {currentPrice >= purchasePrice ? "이익" : "손실"}</span>
               </span>
             )}
             <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
@@ -447,6 +466,31 @@ export default function App() {
               </div>
             </div>
           )}
+          {/* 매수가 설정 */}
+          <div style={{ padding: 14, borderBottom: "1px solid #2d3040" }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "#4b5563", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>매수가 설정</div>
+            {purchasePrice != null && (
+              <div style={{ fontSize: 12, color: "#7c8599", marginBottom: 8 }}>
+                현재 매수가: <b style={{ color: currentPrice >= purchasePrice ? "#22c55e" : "#ef4444" }}>{stock?.fmt(purchasePrice)}</b>
+                {" "}(<span style={{ color: currentPrice >= purchasePrice ? "#22c55e" : "#ef4444" }}>{pSign((currentPrice/purchasePrice-1)*100)}{nf((currentPrice/purchasePrice-1)*100)}%</span>)
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                type="number"
+                value={inputPurchase}
+                onChange={e => setInputPurchase(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && savePurchasePrice(inputPurchase)}
+                placeholder={stock?.currency === "KRW" ? "매수가 입력 (원)" : "매수가 입력 ($)"}
+                style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid #2d3040", background: "#0f1117", color: "#e0e6ed", fontSize: 12, outline: "none" }}
+              />
+              <button onClick={() => savePurchasePrice(inputPurchase)} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>저장</button>
+              {purchasePrice != null && (
+                <button onClick={() => { savePurchasePrice(null); setInputPurchase(""); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #2d3040", background: "transparent", color: "#7c8599", cursor: "pointer", fontSize: 12 }}>×</button>
+              )}
+            </div>
+          </div>
+
           <div style={{ padding: 14 }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: "#4b5563", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>AI 분석</div>
             {!analysis && !aiLoading && dataStatus !== "loading" && (
