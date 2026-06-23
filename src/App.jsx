@@ -118,6 +118,8 @@ export default function App() {
   const [addSymbol, setAddSymbol] = useState("");
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [purchasePrices, setPurchasePrices] = useState(() => {
     try { return JSON.parse(localStorage.getItem("sa_purchases") || "{}"); } catch { return {}; }
   });
@@ -244,6 +246,45 @@ export default function App() {
     if (sel === symbol) setSel(Object.keys(newStocks)[0]);
   };
 
+  // ── 현재가 새로고침 ───────────────────────────────────────────────────
+  const refreshQuote = useCallback(async (silent = false) => {
+    if (!stock) return;
+    if (!silent) setIsRefreshing(true);
+    try {
+      const res = await fetch(ANALYZE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "stock", symbol: stock.symbol }),
+        signal: AbortSignal.timeout(8000),
+      });
+      const json = await res.json();
+      const meta = json.chart?.result?.[0]?.meta;
+      if (meta?.regularMarketPrice) {
+        setApiMeta({
+          currentPrice: meta.regularMarketPrice,
+          dayChange: meta.regularMarketChange,
+          dayChangePct: meta.regularMarketChangePercent,
+        });
+        setLastUpdated(new Date());
+      }
+      // 지수도 같이 갱신
+      fetch(ANALYZE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "indices" }),
+      }).then(r => r.json()).then(setIndices).catch(() => {});
+    } catch {}
+    if (!silent) setIsRefreshing(false);
+  }, [stock?.symbol]);
+
+  // ── 60초 자동 새로고침 ────────────────────────────────────────────────
+  useEffect(() => {
+    if (dataStatus !== "real") return;
+    setLastUpdated(new Date());
+    const id = setInterval(() => refreshQuote(true), 60000);
+    return () => clearInterval(id);
+  }, [dataStatus, sel]);
+
   // ── AI 분석 ───────────────────────────────────────────────────────────
   const runAnalysis = useCallback(async () => {
     if (!l || !sigs) return;
@@ -326,6 +367,8 @@ export default function App() {
               {[[22,"1개월"],[66,"3개월"],[130,"6개월"]].map(([r,label]) => (
                 <button key={r} onClick={() => setRange(r)} style={{ padding: "3px 10px", borderRadius: 6, border: `1px solid ${range === r ? "#3b82f6" : "#2d3040"}`, background: range === r ? "rgba(59,130,246,0.1)" : "transparent", color: range === r ? "#3b82f6" : "#7c8599", cursor: "pointer", fontSize: 11 }}>{label}</button>
               ))}
+              <button onClick={() => refreshQuote(false)} title="새로고침" style={{ padding: "3px 10px", borderRadius: 6, border: "1px solid #2d3040", background: "transparent", color: "#7c8599", cursor: "pointer", fontSize: 13, transition: "transform 0.3s", transform: isRefreshing ? "rotate(180deg)" : "rotate(0deg)" }}>🔄</button>
+              {lastUpdated && <span style={{ fontSize: 10, color: "#4b5563" }}>{lastUpdated.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} 기준</span>}
             </div>
           </>
         }
