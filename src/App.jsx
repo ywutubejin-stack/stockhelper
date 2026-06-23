@@ -290,10 +290,12 @@ export default function App() {
     if (!l || !sigs) return;
     setAiLoading(true); setAnalysis(null);
     try {
-      const systemPrompt = `당신은 전문 주식 애널리스트입니다. 한국어로 분석해주세요.
+      const today = new Date().toLocaleDateString("ko-KR", { year:"numeric", month:"long", day:"numeric" });
+      const systemPrompt = `당신은 전문 주식 애널리스트입니다. 오늘 날짜는 ${today}입니다. 한국어로 분석해주세요.
 반드시 아래 JSON만 반환 (마크다운 없이, 코드블록 없이):
 {"events":[{"date":"날짜 또는 기간","title":"이벤트명","impact":"positive|negative|neutral","detail":"상세설명"}],"news":[{"title":"...","sentiment":"positive|negative|neutral","impact":"..."}],"macro":["..."],"risks":["..."],"catalysts":["..."],"recommendation":"BUY|SELL|HOLD","targetPrice":"...","confidence":75,"reasoning":"..."}
-events에는 실적발표일, 지수편입일정, 락업해제, 배당일, 주주총회, 신제품출시, 규제이슈 등 주가에 영향을 줄 수 있는 향후 주요 일정을 최대 6개 포함하세요.`;
+events에는 오늘(${today}) 이후의 미래 일정만 포함하세요. 과거 이벤트는 절대 포함하지 마세요.
+실적발표일, 지수편입일정, 락업해제, 배당일, 주주총회, 신제품출시, 규제이슈 등 주가에 영향을 줄 수 있는 향후 주요 일정을 최대 6개 포함하세요.`;
       const prompt = `${stock.name}(${stock.symbol}) 분석. 현재가: ${stock.fmt(currentPrice)} | 전일비: ${pSign(safePct)}${nf(safePct)}%${stock.purchase?` | 매수가: ${stock.fmt(purchasePrice)} (${nf((currentPrice/stock.purchase-1)*100)}%)`:""}. RSI: ${l.rsi} | 매수신호: ${sigs.bullPct}%. 최신 동향과 매수/매도/관망 의견.`;
       const res = await fetch(ANALYZE_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, systemPrompt }) });
       const { text, error } = await res.json();
