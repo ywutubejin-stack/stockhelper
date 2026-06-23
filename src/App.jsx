@@ -114,8 +114,10 @@ export default function App() {
 
   const l=chart[chart.length-1];
   const currentPrice=dataStatus==="real"&&apiMeta?apiMeta.currentPrice:l?.close;
-  const dayChgPct=dataStatus==="real"&&apiMeta?apiMeta.dayChangePct:(l&&chart[chart.length-2]?(l.close-chart[chart.length-2].close)/chart[chart.length-2].close*100:0);
-  const dayChgAbs=dataStatus==="real"&&apiMeta?apiMeta.dayChange:(l&&chart[chart.length-2]?l.close-chart[chart.length-2].close:0);
+  const dayChgPct=(dataStatus==="real"&&apiMeta?.dayChangePct!=null)?apiMeta.dayChangePct:(l&&chart[chart.length-2]?.close?(l.close-chart[chart.length-2].close)/chart[chart.length-2].close*100:0);
+  const dayChgAbs=(dataStatus==="real"&&apiMeta?.dayChange!=null)?apiMeta.dayChange:(l&&chart[chart.length-2]?.close?l.close-chart[chart.length-2].close:0);
+  const safePct=dayChgPct??0;
+  const safeAbs=dayChgAbs??0;
 
   const runAnalysis=useCallback(async()=>{
     if(!l||!sigs)return;
@@ -123,7 +125,7 @@ export default function App() {
     try{
       if(!ANALYZE_URL){throw new Error("VITE_ANALYZE_URL이 설정되지 않았습니다. GitHub Secrets를 확인하세요.");}
       const systemPrompt=`당신은 전문 주식 애널리스트입니다. 구글 검색으로 최신 정보를 수집하고 한국어로 분석해주세요.\n반드시 아래 JSON만 반환 (마크다운 없이, 코드블록 없이):\n{"news":[{"title":"...","sentiment":"positive|negative|neutral","impact":"..."}],"macro":["..."],"risks":["..."],"catalysts":["..."],"recommendation":"BUY|SELL|HOLD","targetPrice":"...","confidence":75,"reasoning":"..."}`;
-      const prompt=`${stock.fullName} 분석. 현재가: ${stock.fmt(currentPrice)} | 전일비: ${dayChgPct>=0?"+":""}${dayChgPct.toFixed(2)}%${stock.purchase?` | 매수가: ${stock.fmt(stock.purchase)} (${((currentPrice/stock.purchase-1)*100).toFixed(1)}%)`:""}. RSI: ${l.rsi} | 매수신호: ${sigs.bullPct}%. 최신 뉴스, 거시 동향, 매수/매도/관망 의견.`;
+      const prompt=`${stock.fullName} 분석. 현재가: ${stock.fmt(currentPrice)} | 전일비: ${safePct>=0?"+":""}${safePct.toFixed(2)}%${stock.purchase?` | 매수가: ${stock.fmt(stock.purchase)} (${((currentPrice/stock.purchase-1)*100).toFixed(1)}%)`:""}. RSI: ${l.rsi} | 매수신호: ${sigs.bullPct}%. 최신 뉴스, 거시 동향, 매수/매도/관망 의견.`;
       const res=await fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,systemPrompt})});
       const {text,error}=await res.json();
       if(error)throw new Error(error);
@@ -159,8 +161,8 @@ export default function App() {
           <>
             <span style={{fontSize:11,color:"#7c8599"}}>{stock.fullName}</span>
             <span style={{fontSize:22,fontWeight:700}}>{stock.fmt(currentPrice)}</span>
-            <span style={{color:dayChgPct>=0?"#22c55e":"#ef4444",fontWeight:600,fontSize:13}}>
-              {dayChgPct>=0?"▲":"▼"} {stock.currency==="KRW"?Math.abs(Math.round(dayChgAbs)).toLocaleString("ko-KR"):Math.abs(dayChgAbs).toFixed(2)} ({Math.abs(dayChgPct).toFixed(2)}%)
+            <span style={{color:safePct>=0?"#22c55e":"#ef4444",fontWeight:600,fontSize:13}}>
+              {safePct>=0?"▲":"▼"} {stock.currency==="KRW"?Math.abs(Math.round(safeAbs)).toLocaleString("ko-KR"):Math.abs(safeAbs).toFixed(2)} ({Math.abs(safePct).toFixed(2)}%)
             </span>
             {stock.purchase&&currentPrice&&(<span style={{fontSize:12,color:"#7c8599"}}>매수가 {stock.fmt(stock.purchase)} | <span style={{color:currentPrice>=stock.purchase?"#22c55e":"#ef4444",fontWeight:600}}>{((currentPrice/stock.purchase-1)*100).toFixed(1)}% {currentPrice>=stock.purchase?"이익":"손실"}</span></span>)}
             <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}>
@@ -275,7 +277,7 @@ export default function App() {
             <div style={{padding:14,borderBottom:"1px solid #2d3040"}}>
               <div style={{fontSize:10,fontWeight:600,color:"#4b5563",letterSpacing:0.8,textTransform:"uppercase",marginBottom:10}}>주요 지표</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                {[{label:"현재가",value:stock.fmt(currentPrice)},{label:"전일비",value:`${dayChgPct>=0?"+":""}${dayChgPct.toFixed(2)}%`,color:dayChgPct>=0?"#22c55e":"#ef4444"},{label:"MA 20",value:stock.fmt(l.ma20)},{label:"MA 60",value:stock.fmt(l.ma60)},{label:"RSI",value:l.rsi?.toFixed(1)??"—",color:l.rsi<30?"#22c55e":l.rsi>70?"#ef4444":"#e0e6ed"},{label:"MACD",value:l.macd!=null?(stock.currency==="KRW"?Math.round(l.macd).toLocaleString():l.macd.toFixed(3)):"—",color:l.macd>l.macdSig?"#22c55e":"#ef4444"},{label:"BB 상단",value:stock.fmt(l.bbU)},{label:"BB 하단",value:stock.fmt(l.bbL)}].map(({label,value,color})=>(
+                {[{label:"현재가",value:stock.fmt(currentPrice)},{label:"전일비",value:`${safePct>=0?"+":""}${safePct.toFixed(2)}%`,color:safePct>=0?"#22c55e":"#ef4444"},{label:"MA 20",value:stock.fmt(l.ma20)},{label:"MA 60",value:stock.fmt(l.ma60)},{label:"RSI",value:l.rsi?.toFixed(1)??"—",color:l.rsi<30?"#22c55e":l.rsi>70?"#ef4444":"#e0e6ed"},{label:"MACD",value:l.macd!=null?(stock.currency==="KRW"?Math.round(l.macd).toLocaleString():l.macd.toFixed(3)):"—",color:l.macd>l.macdSig?"#22c55e":"#ef4444"},{label:"BB 상단",value:stock.fmt(l.bbU)},{label:"BB 하단",value:stock.fmt(l.bbL)}].map(({label,value,color})=>(
                   <div key={label} style={{background:"#1a1d27",borderRadius:6,padding:"7px 9px"}}>
                     <div style={{fontSize:9,color:"#4b5563",marginBottom:2}}>{label}</div>
                     <div style={{fontSize:11,fontWeight:600,color:color||"#e0e6ed",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{value}</div>
@@ -312,4 +314,3 @@ export default function App() {
     </div>
   );
 }
-
