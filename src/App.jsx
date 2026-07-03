@@ -37,6 +37,25 @@ const calcRSI = (arr, n=14) => arr.map((_,i)=>{if(i<n)return null;let g=0,l=0;fo
 const calcBB = (arr, n=20) => { const m=calcSMA(arr,n);return arr.map((_,i)=>{if(!m[i])return{};const std=Math.sqrt(arr.slice(i-n+1,i+1).reduce((a,v)=>a+(v-m[i])**2,0)/n);return{u:m[i]+2*std,mid:m[i],lo:m[i]-2*std};});};
 const calcMACD = arr => { const e12=calcEMA(arr,12),e26=calcEMA(arr,26),line=e12.map((v,i)=>v-e26[i]),sig=calcEMA(line,9);return{line,sig,hist:line.map((v,i)=>v-sig[i])};};
 
+function calcSupportResistance(closes, lookback=5) {
+  const levels = [];
+  for (let i=lookback; i<closes.length-lookback; i++) {
+    const left=closes.slice(i-lookback,i), right=closes.slice(i+1,i+lookback+1);
+    if(closes[i]<=Math.min(...left)&&closes[i]<=Math.min(...right)) levels.push({price:closes[i],type:"support"});
+    if(closes[i]>=Math.max(...left)&&closes[i]>=Math.max(...right)) levels.push({price:closes[i],type:"resistance"});
+  }
+  const cluster=(arr,type)=>{
+    const r=[];
+    for(const l of arr.filter(x=>x.type===type)){
+      const ex=r.find(x=>Math.abs(x.price-l.price)/l.price<0.02);
+      if(ex){ex.count++;ex.price=(ex.price+l.price)/2;}
+      else r.push({price:l.price,count:1});
+    }
+    return r.sort((a,b)=>b.count-a.count).slice(0,3).map(x=>x.price).sort((a,b)=>b-a);
+  };
+  return{supports:cluster(levels,"support"),resistances:cluster(levels,"resistance")};
+}
+
 function genOHLCV(stock, days=130) {
   const result=[];let p=stock.base;const start=new Date();start.setDate(start.getDate()-days-10);let trend=stock.trend||0;
   for(let i=0;i<days+20;i++){const d=new Date(start);d.setDate(d.getDate()+i);if([0,6].includes(d.getDay()))continue;if(i===30)trend=-trend;if(i===70)trend=stock.trend||0;const chg=trend+(Math.random()-0.5)*(stock.vol||0.02)+Math.sin(i*0.18)*(stock.vol||0.02)*0.3;const o=p,c=p*(1+chg);result.push({date:`${d.getMonth()+1}/${d.getDate()}`,open:o,high:Math.max(o,c)*(1+Math.random()*(stock.vol||0.02)*0.25),close:c,low:Math.min(o,c)*(1-Math.random()*(stock.vol||0.02)*0.25),volume:Math.floor(Math.random()*12e6+3e6)});p=c;}
@@ -45,8 +64,12 @@ function genOHLCV(stock, days=130) {
 
 function buildChart(raw, stock) {
   const closes=raw.map(d=>d.close),s20=calcSMA(closes,20),s60=calcSMA(closes,60),rsi=calcRSI(closes),{line:ml,sig:ms,hist:mh}=calcMACD(closes),bands=calcBB(closes);
+  const s5=calcSMA(closes,5),s120=calcSMA(closes,120);
+  const sr=calcSupportResistance(closes);
   const dp=stock.currency==="KRW"?0:2,fx=v=>(v==null||isNaN(v))?null:+v.toFixed(dp);
-  return raw.map((d,i)=>({date:d.date,open:fx(d.open),high:fx(d.high),close:fx(d.close),low:fx(d.low),volume:d.volume,ma20:fx(s20[i]),ma60:fx(s60[i]),bbU:fx(bands[i]?.u),bbM:fx(bands[i]?.mid),bbL:fx(bands[i]?.lo),rsi:rsi[i],macd:fx(ml[i]),macdSig:fx(ms[i]),macdH:fx(mh[i])}));
+  const result=raw.map((d,i)=>({date:d.date,open:fx(d.open),high:fx(d.high),close:fx(d.close),low:fx(d.low),volume:d.volume,ma5:fx(s5[i]),ma20:fx(s20[i]),ma60:fx(s60[i]),ma120:fx(s120[i]),bbU:fx(bands[i]?.u),bbM:fx(bands[i]?.mid),bbL:fx(bands[i]?.lo),rsi:rsi[i],macd:fx(ml[i]),macdSig:fx(ms[i]),macdH:fx(mh[i])}));
+  result.sr=sr;
+  return result;
 }
 
 function computeSignals(cd) {
@@ -216,7 +239,7 @@ export default function App() {
         <div style={card}>
           <div style={{fontSize:11,color:"#7c8599",marginBottom:6,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
             <span style={{fontWeight:600,color:"#e0e6ed"}}>가격 차트</span>
-            {[["#3b82f6","종가"],["#fbbf24","MA20"],["#a78bfa","MA60"],["#38bdf8","BB"]].map(([c,label])=>(
+            {[["#3b82f6","종가"],["#34d399","MA5"],["#fbbf24","MA20"],["#a78bfa","MA60"],["#f97316","MA120"],["#38bdf8","BB"]].map(([c,label])=>(
               <span key={label} style={{display:"flex",alignItems:"center",gap:4,fontSize:10}}><span style={{display:"inline-block",width:14,height:2,background:c}}/>{label}</span>
             ))}
           </div>
@@ -229,9 +252,15 @@ export default function App() {
               <Line type="monotone" dataKey="bbU" stroke="#38bdf8" strokeWidth={1} dot={false} opacity={0.55}/>
               <Line type="monotone" dataKey="bbM" stroke="#38bdf8" strokeWidth={0.8} dot={false} opacity={0.3} strokeDasharray="4 3"/>
               <Line type="monotone" dataKey="bbL" stroke="#38bdf8" strokeWidth={1} dot={false} opacity={0.55}/>
+              {/* 지지선 */}
+              {chart.sr?.supports?.map((p,i)=><ReferenceLine key={"s"+i} y={p} stroke="#22c55e" strokeDasharray="6 3" strokeOpacity={0.6} label={{value:stock?.fmt(p),fill:"#22c55e",fontSize:9,position:"right"}}/>)}
+              {/* 저항선 */}
+              {chart.sr?.resistances?.map((p,i)=><ReferenceLine key={"r"+i} y={p} stroke="#ef4444" strokeDasharray="6 3" strokeOpacity={0.6} label={{value:stock?.fmt(p),fill:"#ef4444",fontSize:9,position:"right"}}/>)}
               <Line type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false}/>
-              <Line type="monotone" dataKey="ma20" stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="5 2"/>
-              <Line type="monotone" dataKey="ma60" stroke="#a78bfa" strokeWidth={1.5} dot={false} strokeDasharray="5 2"/>
+              <Line type="monotone" dataKey="ma5"   stroke="#34d399" strokeWidth={1.5} dot={false}/>
+              <Line type="monotone" dataKey="ma20"  stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="5 2"/>
+              <Line type="monotone" dataKey="ma60"  stroke="#a78bfa" strokeWidth={1.5} dot={false} strokeDasharray="5 2"/>
+              <Line type="monotone" dataKey="ma120" stroke="#f97316" strokeWidth={1.5} dot={false} strokeDasharray="3 3"/>
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -314,6 +343,42 @@ export default function App() {
                 <span style={{color:s.type==="neutral"?"#7c8599":"#e0e6ed",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.label}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+      {/* 이동평균 & 지지/저항 */}
+      {l&&dataStatus!=="loading"&&(
+        <div style={{padding:12,borderBottom:"1px solid #2d3040"}}>
+          <div style={{fontSize:10,fontWeight:600,color:"#4b5563",letterSpacing:0.8,textTransform:"uppercase",marginBottom:8}}>이동평균선</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:10}}>
+            {[["MA5","#34d399",l.ma5],["MA20","#fbbf24",l.ma20],["MA60","#a78bfa",l.ma60],["MA120","#f97316",l.ma120]].map(([label,color,val])=>(
+              <div key={label} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 7px",borderRadius:6,background:"#1a1d27"}}>
+                <span style={{display:"inline-block",width:10,height:2,background:color,flexShrink:0}}/>
+                <span style={{fontSize:9,color:"#7c8599"}}>{label}</span>
+                <span style={{fontSize:10,fontWeight:600,color:val&&l.close>val?"#22c55e":val&&l.close<val?"#ef4444":"#e0e6ed",marginLeft:"auto"}}>{stock?.fmt(val)}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{fontSize:10,fontWeight:600,color:"#4b5563",letterSpacing:0.8,textTransform:"uppercase",marginBottom:6}}>지지 / 저항선</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+            <div style={{background:"rgba(34,197,94,0.05)",border:"1px solid rgba(34,197,94,0.15)",borderRadius:7,padding:"6px 8px"}}>
+              <div style={{fontSize:9,fontWeight:600,color:"#22c55e",marginBottom:4}}>🟢 지지선</div>
+              {chart.sr?.supports?.map((p,i)=>(
+                <div key={i} style={{fontSize:10,color:"#b0b8c8",padding:"2px 0",display:"flex",justifyContent:"space-between"}}>
+                  <span>{stock?.fmt(p)}</span>
+                  <span style={{color:"#4b5563",fontSize:9}}>{l.close>0?((p/l.close-1)*100).toFixed(1)+"%":""}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{background:"rgba(239,68,68,0.05)",border:"1px solid rgba(239,68,68,0.15)",borderRadius:7,padding:"6px 8px"}}>
+              <div style={{fontSize:9,fontWeight:600,color:"#ef4444",marginBottom:4}}>🔴 저항선</div>
+              {chart.sr?.resistances?.map((p,i)=>(
+                <div key={i} style={{fontSize:10,color:"#b0b8c8",padding:"2px 0",display:"flex",justifyContent:"space-between"}}>
+                  <span>{stock?.fmt(p)}</span>
+                  <span style={{color:"#4b5563",fontSize:9}}>{l.close>0?((p/l.close-1)*100).toFixed(1)+"%":""}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
