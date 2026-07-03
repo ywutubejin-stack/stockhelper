@@ -221,7 +221,7 @@ events 규칙:
 - 확인된 일정은 프롬프트 하단의 [Yahoo Finance 확인 일정]을 최우선으로 사용
 - 날짜를 임의로 만들지 말 것`;
       const prompt=`${stock.name}(${stock.symbol}) 분석. 현재가: ${stock.fmt(currentPrice)} | 전일비: ${pSign(safePct)}${nf(safePct)}%${purchasePrice?` | 매수가: ${stock.fmt(purchasePrice)} (${nf((currentPrice/purchasePrice-1)*100)}%)`:""}. RSI: ${l.rsi} | 매수신호: ${sigs.bullPct}%.`;
-      const res=await fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,systemPrompt,symbol:stock.symbol})});
+      const res=await fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,systemPrompt,symbol:stock.symbol,stockName:stock.name})});
       const{text,error}=await res.json();if(error)throw new Error(error);
       try{setAnalysis(JSON.parse(text.replace(/```json|```/g,"").trim()));}
       catch{setAnalysis({error:true,reasoning:text||"파싱 오류",recommendation:"HOLD",news:[],macro:[],risks:[],catalysts:[],events:[],confidence:50});}
