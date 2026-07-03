@@ -38,22 +38,38 @@ const calcBB = (arr, n=20) => { const m=calcSMA(arr,n);return arr.map((_,i)=>{if
 const calcMACD = arr => { const e12=calcEMA(arr,12),e26=calcEMA(arr,26),line=e12.map((v,i)=>v-e26[i]),sig=calcEMA(line,9);return{line,sig,hist:line.map((v,i)=>v-sig[i])};};
 
 function calcSupportResistance(closes, lookback=5) {
+  // 최근 60거래일(약 3개월)만 사용 — 오래된 데이터는 의미 없음
+  const recent = closes.slice(-60);
+  const currentPrice = closes[closes.length - 1];
   const levels = [];
-  for (let i=lookback; i<closes.length-lookback; i++) {
-    const left=closes.slice(i-lookback,i), right=closes.slice(i+1,i+lookback+1);
-    if(closes[i]<=Math.min(...left)&&closes[i]<=Math.min(...right)) levels.push({price:closes[i],type:"support"});
-    if(closes[i]>=Math.max(...left)&&closes[i]>=Math.max(...right)) levels.push({price:closes[i],type:"resistance"});
+
+  for (let i=lookback; i<recent.length-lookback; i++) {
+    const left=recent.slice(i-lookback,i), right=recent.slice(i+1,i+lookback+1);
+    if(recent[i]<=Math.min(...left)&&recent[i]<=Math.min(...right))
+      levels.push({price:recent[i],type:"support"});
+    if(recent[i]>=Math.max(...left)&&recent[i]>=Math.max(...right))
+      levels.push({price:recent[i],type:"resistance"});
   }
+
   const cluster=(arr,type)=>{
     const r=[];
     for(const l of arr.filter(x=>x.type===type)){
-      const ex=r.find(x=>Math.abs(x.price-l.price)/l.price<0.02);
-      if(ex){ex.count++;ex.price=(ex.price+l.price)/2;}
+      const ex=r.find(x=>Math.abs(x.price-l.price)/l.price<0.025);
+      if(ex){ex.count++;ex.price=(ex.price*ex.count+l.price)/(ex.count+1);}
       else r.push({price:l.price,count:1});
     }
-    return r.sort((a,b)=>b.count-a.count).slice(0,3).map(x=>x.price).sort((a,b)=>b-a);
+    return r.sort((a,b)=>b.count-a.count).slice(0,4).map(x=>x.price).sort((a,b)=>b-a);
   };
-  return{supports:cluster(levels,"support"),resistances:cluster(levels,"resistance")};
+
+  const allSup = cluster(levels,"support");
+  const allRes = cluster(levels,"resistance");
+
+  return {
+    // 지지선: 현재가 아래만
+    supports:    allSup.filter(p=>p<currentPrice*0.999).sort((a,b)=>b-a).slice(0,3),
+    // 저항선: 현재가 위만
+    resistances: allRes.filter(p=>p>currentPrice*1.001).sort((a,b)=>a-b).slice(0,3),
+  };
 }
 
 function genOHLCV(stock, days=130) {
