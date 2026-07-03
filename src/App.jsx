@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from "recharts";
 
 const ANALYZE_URL = "https://zfeslcgqvlwukyupvcis.supabase.co/functions/v1/smooth-endpoint";
@@ -84,8 +84,7 @@ function buildChart(raw, stock) {
   const sr=calcSupportResistance(closes);
   const dp=stock.currency==="KRW"?0:2,fx=v=>(v==null||isNaN(v))?null:+v.toFixed(dp);
   const result=raw.map((d,i)=>({date:d.date,open:fx(d.open),high:fx(d.high),close:fx(d.close),low:fx(d.low),volume:d.volume,ma5:fx(s5[i]),ma20:fx(s20[i]),ma60:fx(s60[i]),ma120:fx(s120[i]),bbU:fx(bands[i]?.u),bbM:fx(bands[i]?.mid),bbL:fx(bands[i]?.lo),rsi:rsi[i],macd:fx(ml[i]),macdSig:fx(ms[i]),macdH:fx(mh[i])}));
-  result.sr=sr;
-  return result;
+  return { data: result, sr };
 }
 
 function computeSignals(cd) {
@@ -141,6 +140,7 @@ export default function App() {
   const [inputPurchase, setInputPurchase] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [srLevels, setSrLevels] = useState(null);
 
   const stock = stocks[sel] || Object.values(stocks)[0];
   const purchasePrice = purchasePrices[sel] ?? null;
@@ -161,7 +161,7 @@ export default function App() {
         const r=json.chart?.result?.[0]; if(!r)throw new Error("no data");
         const q=r.indicators.quote[0],meta=r.meta;
         const data=r.timestamp.map((t,i)=>{const d=new Date(t*1000);return{date:`${d.getMonth()+1}/${d.getDate()}`,open:q.open[i]??0,high:q.high[i]??0,close:q.close[i],low:q.low[i]??0,volume:q.volume[i]||0};}).filter(d=>d.close!=null&&!isNaN(d.close));
-        const cd=buildChart(data,stock);setChart(cd);setSigs(computeSignals(cd));
+        const {data:cd,sr}=buildChart(data,stock);setChart(cd);setSrLevels(sr);setSigs(computeSignals(cd));
         setApiMeta({currentPrice:meta.regularMarketPrice,dayChange:meta.regularMarketChange,dayChangePct:meta.regularMarketChangePercent});
         setDataStatus("real");setLastUpdated(new Date());
       }).catch(()=>{ const raw=genOHLCV(stock,130);const cd=buildChart(raw,stock);setChart(cd);setSigs(computeSignals(cd));setDataStatus("mock"); });
@@ -212,9 +212,16 @@ export default function App() {
     if(isMobile)setMobileTab("analysis");
     try{
       const today=new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"});
-      const systemPrompt=`당신은 전문 주식 애널리스트입니다. 오늘 날짜는 ${today}입니다. 한국어로 분석해주세요.\n반드시 아래 JSON만 반환 (마크다운 없이):\n{"events":[{"date":"날짜","title":"이벤트명","impact":"positive|negative|neutral","detail":"설명"}],"news":[{"title":"...","sentiment":"positive|negative|neutral","impact":"..."}],"macro":["..."],"risks":["..."],"catalysts":["..."],"recommendation":"BUY|SELL|HOLD","targetPrice":"...","confidence":75,"reasoning":"..."}\nevents에는 ${today} 이후 미래 일정만 최대 6개 포함. 과거 이벤트 절대 금지.`;
+      const systemPrompt=`당신은 전문 주식 애널리스트입니다. 오늘 날짜는 ${today}입니다. 한국어로 분석해주세요.
+반드시 아래 JSON만 반환 (마크다운 없이):
+{"events":[{"date":"날짜","title":"이벤트명","impact":"positive|negative|neutral","detail":"설명"}],"news":[{"title":"...","sentiment":"positive|negative|neutral","impact":"..."}],"macro":["..."],"risks":["..."],"catalysts":["..."],"recommendation":"BUY|SELL|HOLD","targetPrice":"...","confidence":75,"reasoning":"..."}
+events 규칙:
+- ${today} 이후 미래 일정만 포함 (과거 이벤트 절대 금지)
+- 날짜가 확실하지 않으면 "2026년 3분기 예상" 처럼 범위로 표기
+- 확인된 일정은 프롬프트 하단의 [Yahoo Finance 확인 일정]을 최우선으로 사용
+- 날짜를 임의로 만들지 말 것`;
       const prompt=`${stock.name}(${stock.symbol}) 분석. 현재가: ${stock.fmt(currentPrice)} | 전일비: ${pSign(safePct)}${nf(safePct)}%${purchasePrice?` | 매수가: ${stock.fmt(purchasePrice)} (${nf((currentPrice/purchasePrice-1)*100)}%)`:""}. RSI: ${l.rsi} | 매수신호: ${sigs.bullPct}%.`;
-      const res=await fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,systemPrompt})});
+      const res=await fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,systemPrompt,symbol:stock.symbol})});
       const{text,error}=await res.json();if(error)throw new Error(error);
       try{setAnalysis(JSON.parse(text.replace(/```json|```/g,"").trim()));}
       catch{setAnalysis({error:true,reasoning:text||"파싱 오류",recommendation:"HOLD",news:[],macro:[],risks:[],catalysts:[],events:[],confidence:50});}
@@ -269,9 +276,9 @@ export default function App() {
               <Line type="monotone" dataKey="bbM" stroke="#38bdf8" strokeWidth={0.8} dot={false} opacity={0.3} strokeDasharray="4 3"/>
               <Line type="monotone" dataKey="bbL" stroke="#38bdf8" strokeWidth={1} dot={false} opacity={0.55}/>
               {/* 지지선 */}
-              {chart.sr?.supports?.map((p,i)=><ReferenceLine key={"s"+i} y={p} stroke="#22c55e" strokeDasharray="6 3" strokeOpacity={0.6} label={{value:stock?.fmt(p),fill:"#22c55e",fontSize:9,position:"right"}}/>)}
+              {srLevels?.supports?.map((p,i)=><ReferenceLine key={"s"+i} y={p} stroke="#22c55e" strokeDasharray="6 3" strokeOpacity={0.6} label={{value:stock?.fmt(p),fill:"#22c55e",fontSize:9,position:"right"}}/>)}
               {/* 저항선 */}
-              {chart.sr?.resistances?.map((p,i)=><ReferenceLine key={"r"+i} y={p} stroke="#ef4444" strokeDasharray="6 3" strokeOpacity={0.6} label={{value:stock?.fmt(p),fill:"#ef4444",fontSize:9,position:"right"}}/>)}
+              {srLevels?.resistances?.map((p,i)=><ReferenceLine key={"r"+i} y={p} stroke="#ef4444" strokeDasharray="6 3" strokeOpacity={0.6} label={{value:stock?.fmt(p),fill:"#ef4444",fontSize:9,position:"right"}}/>)}
               <Line type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false}/>
               <Line type="monotone" dataKey="ma5"   stroke="#34d399" strokeWidth={1.5} dot={false}/>
               <Line type="monotone" dataKey="ma20"  stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="5 2"/>
@@ -379,7 +386,7 @@ export default function App() {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
             <div style={{background:"rgba(34,197,94,0.05)",border:"1px solid rgba(34,197,94,0.15)",borderRadius:7,padding:"6px 8px"}}>
               <div style={{fontSize:9,fontWeight:600,color:"#22c55e",marginBottom:4}}>🟢 지지선</div>
-              {chart.sr?.supports?.map((p,i)=>(
+              {srLevels?.supports?.map((p,i)=>(
                 <div key={i} style={{fontSize:10,color:"#b0b8c8",padding:"2px 0",display:"flex",justifyContent:"space-between"}}>
                   <span>{stock?.fmt(p)}</span>
                   <span style={{color:"#4b5563",fontSize:9}}>{l.close>0?((p/l.close-1)*100).toFixed(1)+"%":""}</span>
@@ -388,7 +395,7 @@ export default function App() {
             </div>
             <div style={{background:"rgba(239,68,68,0.05)",border:"1px solid rgba(239,68,68,0.15)",borderRadius:7,padding:"6px 8px"}}>
               <div style={{fontSize:9,fontWeight:600,color:"#ef4444",marginBottom:4}}>🔴 저항선</div>
-              {chart.sr?.resistances?.map((p,i)=>(
+              {srLevels?.resistances?.map((p,i)=>(
                 <div key={i} style={{fontSize:10,color:"#b0b8c8",padding:"2px 0",display:"flex",justifyContent:"space-between"}}>
                   <span>{stock?.fmt(p)}</span>
                   <span style={{color:"#4b5563",fontSize:9}}>{l.close>0?((p/l.close-1)*100).toFixed(1)+"%":""}</span>
