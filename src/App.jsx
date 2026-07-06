@@ -174,11 +174,11 @@ export default function App() {
   useEffect(() => {
     if(dataStatus!=="real")return;
     const id=setInterval(()=>{
-      fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"stock",symbol:stock.symbol}),signal:AbortSignal.timeout(8000)})
-        .then(r=>r.json()).then(json=>{const meta=json.chart?.result?.[0]?.meta;if(meta?.regularMarketPrice){setApiMeta({currentPrice:meta.regularMarketPrice,dayChange:meta.regularMarketChange,dayChangePct:meta.regularMarketChangePercent});setLastUpdated(new Date());}})
+      fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"quote",symbol:stock.symbol}),signal:AbortSignal.timeout(8000)})
+        .then(r=>r.json()).then(json=>{if(json.price){setApiMeta({currentPrice:json.price,dayChange:json.change,dayChangePct:json.pct});setLastUpdated(new Date());}})
         .catch(()=>{});
       fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"indices"})}).then(r=>r.json()).then(setIndices).catch(()=>{});
-    },60000);
+    },30000);
     return ()=>clearInterval(id);
   },[dataStatus,sel]);
 
@@ -201,8 +201,17 @@ export default function App() {
 
   const refreshQuote=useCallback(async()=>{
     if(!stock)return;setIsRefreshing(true);
-    try{const res=await fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"stock",symbol:stock.symbol}),signal:AbortSignal.timeout(8000)});const json=await res.json();const meta=json.chart?.result?.[0]?.meta;if(meta?.regularMarketPrice){setApiMeta({currentPrice:meta.regularMarketPrice,dayChange:meta.regularMarketChange,dayChangePct:meta.regularMarketChangePercent});setLastUpdated(new Date());}
-    fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"indices"})}).then(r=>r.json()).then(setIndices).catch(()=>{});}catch{}
+    try{
+      // quote 타입: 1분봉으로 최신 현재가만 빠르게 조회
+      const res=await fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"quote",symbol:stock.symbol}),signal:AbortSignal.timeout(8000)});
+      const json=await res.json();
+      if(json.price){
+        setApiMeta({currentPrice:json.price,dayChange:json.change,dayChangePct:json.pct});
+        setLastUpdated(new Date());
+      }
+      // 지수도 갱신
+      fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"indices"})}).then(r=>r.json()).then(setIndices).catch(()=>{});
+    }catch{}
     setIsRefreshing(false);
   },[stock?.symbol]);
 
