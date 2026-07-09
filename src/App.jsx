@@ -8,8 +8,8 @@ const makeFmt = (currency) => currency === "KRW"
   : (v) => v != null && !isNaN(v) ? "$" + Number(v).toFixed(2) : "-";
 
 const DEFAULT_STOCKS = {
-  "005930.KS": { name: "삼성전자",   symbol: "005930.KS", currency: "KRW", base: 356000, vol: 0.025, trend: 0.001,  purchase: null },
-  "SPCX":      { name: "SpaceX",     symbol: "SPCX",       currency: "USD", base: 196,    vol: 0.024, trend: -0.001, purchase: null },
+  "005930.KS": { name: "삼성전자", symbol: "005930.KS", currency: "KRW", base: 356000, vol: 0.025, trend: 0.001, purchase: null },
+  "SPCX":      { name: "SpaceX",   symbol: "SPCX",       currency: "USD", base: 196,    vol: 0.024, trend: -0.001, purchase: null },
 };
 
 const POPULAR = [
@@ -31,6 +31,7 @@ const saveStocks = (stocks) => {
   try { localStorage.setItem("sa_stocks_v2", JSON.stringify(Object.fromEntries(Object.entries(stocks).map(([k,v])=>{const{fmt,...r}=v;return[k,r];})))); } catch {}
 };
 
+// ── 지표 계산 ─────────────────────────────────────────────────────────────────
 const calcSMA = (arr, n) => arr.map((_, i) => i < n-1 ? null : arr.slice(i-n+1,i+1).reduce((a,b)=>a+b)/n);
 const calcEMA = (arr, n) => { const k=2/(n+1); return arr.reduce((acc,v,i)=>{acc.push(i===0?v:v*k+acc[i-1]*(1-k));return acc;},[]);};
 const calcRSI = (arr, n=14) => arr.map((_,i)=>{if(i<n)return null;let g=0,l=0;for(let j=i-n+1;j<=i;j++){const d=arr[j]-arr[j-1];d>0?(g+=d):(l-=d);}return+(100-100/(1+g/(l||1e-9))).toFixed(2);});
@@ -42,15 +43,11 @@ function calcSupportResistance(closes, lookback=3) {
   const recent = closes.slice(-Math.min(60, closes.length));
   const currentPrice = closes[closes.length - 1];
   const levels = [];
-
-  for (let i=lookback; i<recent.length-lookback; i++) {
+  for(let i=lookback; i<recent.length-lookback; i++) {
     const left=recent.slice(i-lookback,i), right=recent.slice(i+1,i+lookback+1);
-    const isMin=recent[i]<=Math.min(...left)&&recent[i]<=Math.min(...right);
-    const isMax=recent[i]>=Math.max(...left)&&recent[i]>=Math.max(...right);
-    if(isMin) levels.push({price:recent[i],type:"support",idx:i});
-    if(isMax) levels.push({price:recent[i],type:"resistance",idx:i});
+    if(recent[i]<=Math.min(...left)&&recent[i]<=Math.min(...right)) levels.push({price:recent[i],type:"support",idx:i});
+    if(recent[i]>=Math.max(...left)&&recent[i]>=Math.max(...right)) levels.push({price:recent[i],type:"resistance",idx:i});
   }
-
   const cluster=(arr,type)=>{
     const r=[];
     for(const l of arr.filter(x=>x.type===type).sort((a,b)=>b.idx-a.idx)){
@@ -60,34 +57,30 @@ function calcSupportResistance(closes, lookback=3) {
     }
     return r.sort((a,b)=>b.count-a.count).slice(0,5).map(x=>x.price);
   };
-
-  const allSup = cluster(levels,"support");
-  const allRes = cluster(levels,"resistance");
-  const margin = 0.003;
-
   return {
-    supports:    allSup.filter(p=>p<currentPrice*(1-margin)).sort((a,b)=>b-a).slice(0,3),
-    resistances: allRes.filter(p=>p>currentPrice*(1+margin)).sort((a,b)=>a-b).slice(0,3),
+    supports:    cluster(levels,"support").filter(p=>p<currentPrice*0.997).sort((a,b)=>b-a).slice(0,3),
+    resistances: cluster(levels,"resistance").filter(p=>p>currentPrice*1.003).sort((a,b)=>a-b).slice(0,3),
   };
 }
 
 function genOHLCV(stock, days=130) {
-  const result=[];let p=stock.base;const start=new Date();start.setDate(start.getDate()-days-10);let trend=stock.trend||0;
+  const result=[]; let p=stock.base; const start=new Date(); start.setDate(start.getDate()-days-10); let trend=stock.trend||0;
   for(let i=0;i<days+20;i++){const d=new Date(start);d.setDate(d.getDate()+i);if([0,6].includes(d.getDay()))continue;if(i===30)trend=-trend;if(i===70)trend=stock.trend||0;const chg=trend+(Math.random()-0.5)*(stock.vol||0.02)+Math.sin(i*0.18)*(stock.vol||0.02)*0.3;const o=p,c=p*(1+chg);result.push({date:`${d.getMonth()+1}/${d.getDate()}`,open:o,high:Math.max(o,c)*(1+Math.random()*(stock.vol||0.02)*0.25),close:c,low:Math.min(o,c)*(1-Math.random()*(stock.vol||0.02)*0.25),volume:Math.floor(Math.random()*12e6+3e6)});p=c;}
   return result.slice(-days);
 }
 
 function buildChart(raw, stock) {
-  const closes=raw.map(d=>d.close),s20=calcSMA(closes,20),s60=calcSMA(closes,60),rsi=calcRSI(closes),{line:ml,sig:ms,hist:mh}=calcMACD(closes),bands=calcBB(closes);
-  const s5=calcSMA(closes,5),s120=calcSMA(closes,120);
+  const closes=raw.map(d=>d.close);
+  const s5=calcSMA(closes,5),s20=calcSMA(closes,20),s60=calcSMA(closes,60),s120=calcSMA(closes,120);
+  const rsi=calcRSI(closes),{line:ml,sig:ms,hist:mh}=calcMACD(closes),bands=calcBB(closes);
   const sr=calcSupportResistance(closes);
-  const dp=stock.currency==="KRW"?0:2,fx=v=>(v==null||isNaN(v))?null:+v.toFixed(dp);
-  const result=raw.map((d,i)=>({date:d.date,open:fx(d.open),high:fx(d.high),close:fx(d.close),low:fx(d.low),volume:d.volume,ma5:fx(s5[i]),ma20:fx(s20[i]),ma60:fx(s60[i]),ma120:fx(s120[i]),bbU:fx(bands[i]?.u),bbM:fx(bands[i]?.mid),bbL:fx(bands[i]?.lo),rsi:rsi[i],macd:fx(ml[i]),macdSig:fx(ms[i]),macdH:fx(mh[i])}));
-  return { data: result, sr };
+  const dp=stock.currency==="KRW"?0:2, fx=v=>(v==null||isNaN(v))?null:+v.toFixed(dp);
+  const data=raw.map((d,i)=>({date:d.date,open:fx(d.open),high:fx(d.high),close:fx(d.close),low:fx(d.low),volume:d.volume,ma5:fx(s5[i]),ma20:fx(s20[i]),ma60:fx(s60[i]),ma120:fx(s120[i]),bbU:fx(bands[i]?.u),bbM:fx(bands[i]?.mid),bbL:fx(bands[i]?.lo),rsi:rsi[i],macd:fx(ml[i]),macdSig:fx(ms[i]),macdH:fx(mh[i])}));
+  return { data, sr };
 }
 
 function computeSignals(cd) {
-  const l=cd[cd.length-1],p=cd[cd.length-2];if(!l||!p)return{signals:[],bullPct:50};
+  const l=cd[cd.length-1],p=cd[cd.length-2]; if(!l||!p)return{signals:[],bullPct:50};
   const S=[],add=(type,label,detail,w)=>S.push({type,label,detail,w});
   if(l.rsi!=null){if(l.rsi<30)add("buy","RSI 과매도",`RSI ${l.rsi}`,3);else if(l.rsi>70)add("sell","RSI 과매수",`RSI ${l.rsi}`,3);else if(l.rsi<45)add("sell","RSI 약세",`RSI ${l.rsi}`,1);else add("buy","RSI 강세",`RSI ${l.rsi}`,1);}
   if(l.ma20&&l.ma60){if(l.ma20>l.ma60&&p.ma20<=p.ma60)add("buy","골든크로스!","MA20↑MA60",5);else if(l.ma20<l.ma60&&p.ma20>=p.ma60)add("sell","데드크로스!","MA20↓MA60",5);else if(l.ma20>l.ma60)add("buy","MA 정배열","MA20>MA60",1);else add("sell","MA 역배열","MA20<MA60",1);}
@@ -113,7 +106,7 @@ function PriceTip({active,payload,label,fmt}){
 }
 
 function IdxBadge({label,value,pct}){
-  if(value==null||pct==null||isNaN(value)||isNaN(pct))return<span style={{color:"#4b5563",fontSize:11}}>{label} —</span>;
+  if(value==null||pct==null||isNaN(value)||isNaN(pct)) return <span style={{color:"#4b5563",fontSize:11}}>{label} —</span>;
   const up=pct>=0;
   return(<span style={{fontSize:11}}><span style={{color:"#7c8599"}}>{label} </span><span style={{color:up?"#22c55e":"#ef4444",fontWeight:600}}>{Number(value).toLocaleString("ko-KR",{maximumFractionDigits:0})} {up?"▲":"▼"}{Math.abs(pct).toFixed(2)}%</span></span>);
 }
@@ -125,6 +118,7 @@ export default function App() {
   const [sel, setSel] = useState(Object.keys(loadStocks())[0]);
   const [range, setRange] = useState(66);
   const [chart, setChart] = useState([]);
+  const [srLevels, setSrLevels] = useState(null);
   const [sigs, setSigs] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -139,31 +133,34 @@ export default function App() {
   const [inputPurchase, setInputPurchase] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [srLevels, setSrLevels] = useState(null);
 
   const stock = stocks[sel] || Object.values(stocks)[0];
   const purchasePrice = purchasePrices[sel] ?? null;
 
   useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", handler);
-    return () => window.removeEventListener("resize", handler);
+    const h = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", h);
+    return () => window.removeEventListener("resize", h);
   }, []);
 
   useEffect(() => { setInputPurchase(purchasePrices[sel]!=null ? String(purchasePrices[sel]) : ""); }, [sel]);
 
   useEffect(() => {
-    if (!stock) return;
-    setAnalysis(null); setSigs(null); setChart([]); setDataStatus("loading"); setApiMeta(null);
-    fetch(ANALYZE_URL, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type:"stock",symbol:stock.symbol}), signal:AbortSignal.timeout(10000) })
+    if(!stock) return;
+    setAnalysis(null); setSigs(null); setChart([]); setSrLevels(null); setDataStatus("loading"); setApiMeta(null);
+    fetch(ANALYZE_URL, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"stock",symbol:stock.symbol}),signal:AbortSignal.timeout(10000)})
       .then(r=>r.json()).then(json=>{
-        const r=json.chart?.result?.[0]; if(!r)throw new Error("no data");
-        const q=r.indicators.quote[0],meta=r.meta;
+        const r=json.chart?.result?.[0]; if(!r) throw new Error("no data");
+        const q=r.indicators.quote[0], meta=r.meta;
         const data=r.timestamp.map((t,i)=>{const d=new Date(t*1000);return{date:`${d.getMonth()+1}/${d.getDate()}`,open:q.open[i]??0,high:q.high[i]??0,close:q.close[i],low:q.low[i]??0,volume:q.volume[i]||0};}).filter(d=>d.close!=null&&!isNaN(d.close));
-        const {data:cd,sr}=buildChart(data,stock);setChart(cd);setSrLevels(sr);setSigs(computeSignals(cd));
+        const {data:cd,sr}=buildChart(data,stock);
+        setChart(cd); setSrLevels(sr); setSigs(computeSignals(cd));
         setApiMeta({currentPrice:meta.regularMarketPrice,dayChange:meta.regularMarketChange,dayChangePct:meta.regularMarketChangePercent});
-        setDataStatus("real");setLastUpdated(new Date());
-      }).catch(()=>{ const raw=genOHLCV(stock,130);const cd=buildChart(raw,stock);setChart(cd);setSigs(computeSignals(cd));setDataStatus("mock"); });
+        setDataStatus("real"); setLastUpdated(new Date());
+      }).catch(()=>{
+        const raw=genOHLCV(stock,130); const {data:cd,sr}=buildChart(raw,stock);
+        setChart(cd); setSrLevels(sr); setSigs(computeSignals(cd)); setDataStatus("mock");
+      });
   }, [sel]);
 
   useEffect(() => {
@@ -171,18 +168,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if(dataStatus!=="real")return;
+    if(dataStatus!=="real") return;
     const id=setInterval(()=>{
       fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"quote",symbol:stock.symbol}),signal:AbortSignal.timeout(8000)})
-        .then(r=>r.json()).then(json=>{if(json.price){setApiMeta({currentPrice:json.price,dayChange:json.change,dayChangePct:json.pct});setLastUpdated(new Date());}})
-        .catch(()=>{});
+        .then(r=>r.json()).then(json=>{if(json.price){setApiMeta({currentPrice:json.price,dayChange:json.change,dayChangePct:json.pct});setLastUpdated(new Date());}}).catch(()=>{});
       fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"indices"})}).then(r=>r.json()).then(setIndices).catch(()=>{});
-    },30000);
+    }, 30000);
     return ()=>clearInterval(id);
-  },[dataStatus,sel]);
+  }, [dataStatus, sel]);
 
-  const display=useMemo(()=>chart.slice(-range),[chart,range]);
-  const ticks=useMemo(()=>{if(!display.length)return[];const step=Math.max(1,Math.floor(display.length/(isMobile?4:6)));return display.filter((_,i)=>i%step===0).map(d=>d.date);},[display,isMobile]);
+  const display = useMemo(()=>chart.slice(-range),[chart,range]);
+  const ticks = useMemo(()=>{if(!display.length)return[];const step=Math.max(1,Math.floor(display.length/(isMobile?4:6)));return display.filter((_,i)=>i%step===0).map(d=>d.date);},[display,isMobile]);
 
   const l=chart[chart.length-1];
   const currentPrice=(dataStatus==="real"&&apiMeta?.currentPrice!=null)?apiMeta.currentPrice:(l?.close??0);
@@ -195,20 +191,15 @@ export default function App() {
     const price=val===""||val==null?null:Number(val);
     const updated={...purchasePrices};
     if(price==null||isNaN(price)){delete updated[sel];}else{updated[sel]=price;}
-    setPurchasePrices(updated);localStorage.setItem("sa_purchases",JSON.stringify(updated));
+    setPurchasePrices(updated); localStorage.setItem("sa_purchases",JSON.stringify(updated));
   };
 
   const refreshQuote=useCallback(async()=>{
-    if(!stock)return;setIsRefreshing(true);
+    if(!stock)return; setIsRefreshing(true);
     try{
-      // quote 타입: 1분봉으로 최신 현재가만 빠르게 조회
       const res=await fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"quote",symbol:stock.symbol}),signal:AbortSignal.timeout(8000)});
       const json=await res.json();
-      if(json.price){
-        setApiMeta({currentPrice:json.price,dayChange:json.change,dayChangePct:json.pct});
-        setLastUpdated(new Date());
-      }
-      // 지수도 갱신
+      if(json.price){setApiMeta({currentPrice:json.price,dayChange:json.change,dayChangePct:json.pct});setLastUpdated(new Date());}
       fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"indices"})}).then(r=>r.json()).then(setIndices).catch(()=>{});
     }catch{}
     setIsRefreshing(false);
@@ -216,54 +207,38 @@ export default function App() {
 
   const runAnalysis=useCallback(async()=>{
     if(!l||!sigs)return;
-    setAiLoading(true);setAnalysis(null);
-    if(isMobile)setMobileTab("analysis");
+    setAiLoading(true); setAnalysis(null);
+    if(isMobile) setMobileTab("analysis");
     try{
       const today=new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"});
-      const systemPrompt=`당신은 전문 주식 애널리스트입니다. 오늘 날짜는 ${today}입니다. 한국어로 분석해주세요.
-반드시 아래 JSON만 반환 (마크다운 없이):
-{"events":[{"date":"날짜","title":"이벤트명","impact":"positive|negative|neutral","detail":"설명"}],"news":[{"title":"...","sentiment":"positive|negative|neutral","impact":"..."}],"macro":["..."],"risks":["..."],"catalysts":["..."],"recommendation":"BUY|SELL|HOLD","targetPrice":"...","confidence":75,"reasoning":"..."}
-events 규칙:
-- ${today} 이후 미래 일정만 포함 (과거 이벤트 절대 금지)
-- 날짜가 확실하지 않으면 "2026년 3분기 예상" 처럼 범위로 표기
-- 확인된 일정은 프롬프트 하단의 [Yahoo Finance 확인 일정]을 최우선으로 사용
-- 날짜를 임의로 만들지 말 것`;
+      const systemPrompt=`당신은 전문 주식 애널리스트입니다. 오늘 날짜는 ${today}입니다. 한국어로 분석해주세요.\n반드시 아래 JSON만 반환 (마크다운 없이):\n{"events":[{"date":"날짜","title":"이벤트명","impact":"positive|negative|neutral","detail":"설명"}],"news":[{"title":"...","sentiment":"positive|negative|neutral","impact":"..."}],"macro":["..."],"risks":["..."],"catalysts":["..."],"recommendation":"BUY|SELL|HOLD","targetPrice":"...","confidence":75,"reasoning":"..."}\nevents: ${today} 이후 미래 일정만, 날짜 불확실시 "2026년 3분기 예상" 형식으로, 절대 임의 날짜 생성 금지`;
       const prompt=`${stock.name}(${stock.symbol}) 분석. 현재가: ${stock.fmt(currentPrice)} | 전일비: ${pSign(safePct)}${nf(safePct)}%${purchasePrice?` | 매수가: ${stock.fmt(purchasePrice)} (${nf((currentPrice/purchasePrice-1)*100)}%)`:""}. RSI: ${l.rsi} | 매수신호: ${sigs.bullPct}%.`;
       const res=await fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,systemPrompt,symbol:stock.symbol,stockName:stock.name})});
-      const{text,error}=await res.json();if(error)throw new Error(error);
+      const {text,error}=await res.json();
+      if(error) throw new Error(error);
       try{
-        // 마크다운 제거 후 JSON 추출
-        let clean = text.replace(/```json|```/g,"").trim();
-        // { 부터 마지막 } 까지만 추출 (잘린 경우 대비)
-        const start = clean.indexOf("{");
-        let end = clean.lastIndexOf("}");
-        if(start !== -1 && end !== -1 && end > start){
-          clean = clean.substring(start, end + 1);
-        }
+        let clean=text.replace(/```json|```/g,"").trim();
+        const start=clean.indexOf("{"), end=clean.lastIndexOf("}");
+        if(start!==-1&&end>start) clean=clean.substring(start,end+1);
         setAnalysis(JSON.parse(clean));
       }catch{
-        // 파싱 실패 시 텍스트에서 핵심만 추출해서 표시
-        const recMatch = text.match(/"recommendation"\s*:\s*"(BUY|SELL|HOLD)"/);
-        const reasonMatch = text.match(/"reasoning"\s*:\s*"([^"]{10,})"/);
-        setAnalysis({
-          error:false,
-          recommendation: recMatch?.[1] || "HOLD",
-          reasoning: reasonMatch?.[1] || text.substring(0,300) || "분석 완료 (표시 오류)",
-          news:[], macro:[], risks:[], catalysts:[], events:[], confidence:50
-        });
+        const recMatch=text.match(/"recommendation"\s*:\s*"(BUY|SELL|HOLD)"/);
+        const reasonMatch=text.match(/"reasoning"\s*:\s*"([^"]{10,})"/);
+        setAnalysis({error:false,recommendation:recMatch?.[1]||"HOLD",reasoning:reasonMatch?.[1]||text.substring(0,300)||"분석 완료",news:[],macro:[],risks:[],catalysts:[],events:[],confidence:50});
       }
     }catch(err){setAnalysis({error:true,reasoning:err.message,recommendation:"HOLD",news:[],macro:[],risks:[],catalysts:[],events:[],confidence:50});}
     finally{setAiLoading(false);}
   },[l,sigs,stock,currentPrice,safePct,purchasePrice,isMobile]);
 
   const addStock=async(sym)=>{
-    const symbol=(sym||addSymbol).toUpperCase().trim();if(!symbol)return;
-    setAddLoading(true);setAddError("");
-    try{const res=await fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"stock",symbol}),signal:AbortSignal.timeout(10000)});
-    const json=await res.json();const meta=json.chart?.result?.[0]?.meta;if(!meta)throw new Error("종목을 찾을 수 없습니다");
-    const currency=meta.currency||(symbol.endsWith(".KS")?"KRW":"USD");
-    const newStock={name:meta.shortName||symbol,symbol,currency,base:meta.regularMarketPrice||100,vol:0.02,trend:0,purchase:null,fmt:makeFmt(currency)};
-    const newStocks={...stocks,[symbol]:newStock};setStocks(newStocks);saveStocks(newStocks);setSel(symbol);setShowAdd(false);setAddSymbol("");
+    const symbol=(sym||addSymbol).toUpperCase().trim(); if(!symbol)return;
+    setAddLoading(true); setAddError("");
+    try{
+      const res=await fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"stock",symbol}),signal:AbortSignal.timeout(10000)});
+      const json=await res.json(); const meta=json.chart?.result?.[0]?.meta; if(!meta) throw new Error("종목을 찾을 수 없습니다");
+      const currency=meta.currency||(symbol.endsWith(".KS")?"KRW":"USD");
+      const newStock={name:meta.shortName||symbol,symbol,currency,base:meta.regularMarketPrice||100,vol:0.02,trend:0,purchase:null,fmt:makeFmt(currency)};
+      const newStocks={...stocks,[symbol]:newStock}; setStocks(newStocks); saveStocks(newStocks); setSel(symbol); setShowAdd(false); setAddSymbol("");
     }catch(e){setAddError(e.message||"추가 실패");}finally{setAddLoading(false);}
   };
 
@@ -276,14 +251,10 @@ events 규칙:
   const yfmt=v=>(v==null||isNaN(v))?"":stock.currency==="KRW"?(v/1000).toFixed(0)+"k":"$"+Number(v).toFixed(0);
   const chartH=(h)=>isMobile?Math.round(h*0.75):h;
 
-  // ── 차트 영역 ──────────────────────────────────────────────────────────────
-  const ChartsPanel = (
+  // ── 차트 패널 ─────────────────────────────────────────────────────────────
+  const ChartsPanel=(
     <div style={{overflowY:"auto",padding:isMobile?"8px":"12px 10px 12px 14px",display:"flex",flexDirection:"column",gap:8,flex:1}}>
-      {dataStatus==="loading"&&(
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",flex:1,flexDirection:"column",gap:12,color:"#7c8599",paddingTop:60}}>
-          <div style={{fontSize:32}}>📡</div><div style={{fontSize:13}}>데이터 로딩 중…</div>
-        </div>
-      )}
+      {dataStatus==="loading"&&(<div style={{display:"flex",alignItems:"center",justifyContent:"center",flex:1,flexDirection:"column",gap:12,color:"#7c8599",paddingTop:60}}><div style={{fontSize:32}}>📡</div><div style={{fontSize:13}}>데이터 로딩 중…</div></div>)}
       {dataStatus!=="loading"&&(<>
         {/* 가격 차트 */}
         <div style={card}>
@@ -299,13 +270,11 @@ events 규칙:
               <XAxis dataKey="date" ticks={ticks} tick={{fill:"#7c8599",fontSize:9}}/>
               <YAxis domain={["auto","auto"]} tick={{fill:"#7c8599",fontSize:9}} width={48} tickFormatter={yfmt}/>
               <Tooltip content={<PriceTip fmt={stock?.fmt||(v=>v)}/>}/>
+              {srLevels?.supports?.map((p,i)=><ReferenceLine key={"s"+i} y={p} stroke="#22c55e" strokeDasharray="5 3" strokeWidth={1.5} strokeOpacity={0.8} ifOverflow="extendDomain" label={{value:stock?.fmt(Math.round(p)),fill:"#22c55e",fontSize:8,position:"insideBottomRight"}}/>)}
+              {srLevels?.resistances?.map((p,i)=><ReferenceLine key={"r"+i} y={p} stroke="#ef4444" strokeDasharray="5 3" strokeWidth={1.5} strokeOpacity={0.8} ifOverflow="extendDomain" label={{value:stock?.fmt(Math.round(p)),fill:"#ef4444",fontSize:8,position:"insideTopRight"}}/>)}
               <Line type="monotone" dataKey="bbU" stroke="#38bdf8" strokeWidth={1} dot={false} opacity={0.55}/>
               <Line type="monotone" dataKey="bbM" stroke="#38bdf8" strokeWidth={0.8} dot={false} opacity={0.3} strokeDasharray="4 3"/>
               <Line type="monotone" dataKey="bbL" stroke="#38bdf8" strokeWidth={1} dot={false} opacity={0.55}/>
-              {/* 지지선 */}
-              {srLevels?.supports?.map((p,i)=><ReferenceLine key={"s"+i} y={p} stroke="#22c55e" strokeDasharray="5 3" strokeWidth={1.5} strokeOpacity={0.8} ifOverflow="extendDomain" label={{value:stock?.fmt(p),fill:"#22c55e",fontSize:8,position:"insideBottomRight"}}/>)}
-              {/* 저항선 */}
-              {srLevels?.resistances?.map((p,i)=><ReferenceLine key={"r"+i} y={p} stroke="#ef4444" strokeDasharray="5 3" strokeWidth={1.5} strokeOpacity={0.8} ifOverflow="extendDomain" label={{value:stock?.fmt(p),fill:"#ef4444",fontSize:8,position:"insideTopRight"}}/>)}
               <Line type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false}/>
               <Line type="monotone" dataKey="ma5"   stroke="#34d399" strokeWidth={1.5} dot={false}/>
               <Line type="monotone" dataKey="ma20"  stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="5 2"/>
@@ -322,9 +291,7 @@ events 규칙:
               <CartesianGrid strokeDasharray="3 3" stroke="#2d3040"/>
               <XAxis dataKey="date" ticks={ticks} tick={{fill:"#7c8599",fontSize:8}}/>
               <YAxis tick={{fill:"#7c8599",fontSize:8}} width={38} tickFormatter={v=>(v/1e6).toFixed(0)+"M"}/>
-              <Bar dataKey="volume" radius={[2,2,0,0]}>
-                {display.map((d,i)=><Cell key={i} fill={i===0||d.close>=(display[i-1]?.close??d.close)?"rgba(34,197,94,0.5)":"rgba(239,68,68,0.5)"}/>)}
-              </Bar>
+              <Bar dataKey="volume" radius={[2,2,0,0]}>{display.map((d,i)=><Cell key={i} fill={i===0||d.close>=(display[i-1]?.close??d.close)?"rgba(34,197,94,0.5)":"rgba(239,68,68,0.5)"}/>)}</Bar>
               <Tooltip contentStyle={{background:"#1a1d27",border:"1px solid #2d3040",color:"#e0e6ed",fontSize:10}} formatter={v=>[(v/1e6).toFixed(2)+"M","거래량"]}/>
             </ComposedChart>
           </ResponsiveContainer>
@@ -371,8 +338,8 @@ events 규칙:
     </div>
   );
 
-  // ── 분석 영역 ──────────────────────────────────────────────────────────────
-  const AnalysisPanel = (
+  // ── 분석 패널 ─────────────────────────────────────────────────────────────
+  const AnalysisPanel=(
     <div style={{overflowY:"auto",background:"#13161f",flex:isMobile?1:undefined,borderLeft:isMobile?"none":"1px solid #2d3040"}}>
       {/* 기술적 신호 */}
       {sigs&&dataStatus!=="loading"&&(
@@ -405,31 +372,35 @@ events 규칙:
               <div key={label} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 7px",borderRadius:6,background:"#1a1d27"}}>
                 <span style={{display:"inline-block",width:10,height:2,background:color,flexShrink:0}}/>
                 <span style={{fontSize:9,color:"#7c8599"}}>{label}</span>
-                <span style={{fontSize:10,fontWeight:600,color:val&&l.close>val?"#22c55e":val&&l.close<val?"#ef4444":"#e0e6ed",marginLeft:"auto"}}>{stock?.fmt(val)}</span>
+                <span style={{fontSize:10,fontWeight:600,color:val&&currentPrice>val?"#22c55e":val&&currentPrice<val?"#ef4444":"#e0e6ed",marginLeft:"auto"}}>{stock?.fmt(val)}</span>
               </div>
             ))}
           </div>
           <div style={{fontSize:10,fontWeight:600,color:"#4b5563",letterSpacing:0.8,textTransform:"uppercase",marginBottom:6}}>지지 / 저항선</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
-            <div style={{background:"rgba(34,197,94,0.05)",border:"1px solid rgba(34,197,94,0.15)",borderRadius:7,padding:"6px 8px"}}>
-              <div style={{fontSize:9,fontWeight:600,color:"#22c55e",marginBottom:4}}>🟢 지지선</div>
-              {srLevels?.supports?.map((p,i)=>(
-                <div key={i} style={{fontSize:10,color:"#b0b8c8",padding:"2px 0",display:"flex",justifyContent:"space-between"}}>
-                  <span>{stock?.fmt(p)}</span>
-                  <span style={{color:"#4b5563",fontSize:9}}>{l.close>0?((p/l.close-1)*100).toFixed(1)+"%":""}</span>
-                </div>
-              ))}
+          {(!srLevels?.supports?.length && !srLevels?.resistances?.length) ? (
+            <div style={{fontSize:10,color:"#4b5563",padding:"4px 0"}}>기간을 늘려주세요 (3개월 이상)</div>
+          ) : (
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+              <div style={{background:"rgba(34,197,94,0.05)",border:"1px solid rgba(34,197,94,0.15)",borderRadius:7,padding:"6px 8px"}}>
+                <div style={{fontSize:9,fontWeight:600,color:"#22c55e",marginBottom:4}}>🟢 지지선</div>
+                {srLevels?.supports?.length ? srLevels.supports.map((p,i)=>(
+                  <div key={i} style={{fontSize:10,color:"#b0b8c8",padding:"2px 0",display:"flex",justifyContent:"space-between"}}>
+                    <span>{stock?.fmt(Math.round(p))}</span>
+                    <span style={{color:"#22c55e",fontSize:9}}>{currentPrice>0?((p/currentPrice-1)*100).toFixed(1)+"%":""}</span>
+                  </div>
+                )) : <div style={{fontSize:9,color:"#4b5563"}}>—</div>}
+              </div>
+              <div style={{background:"rgba(239,68,68,0.05)",border:"1px solid rgba(239,68,68,0.15)",borderRadius:7,padding:"6px 8px"}}>
+                <div style={{fontSize:9,fontWeight:600,color:"#ef4444",marginBottom:4}}>🔴 저항선</div>
+                {srLevels?.resistances?.length ? srLevels.resistances.map((p,i)=>(
+                  <div key={i} style={{fontSize:10,color:"#b0b8c8",padding:"2px 0",display:"flex",justifyContent:"space-between"}}>
+                    <span>{stock?.fmt(Math.round(p))}</span>
+                    <span style={{color:"#ef4444",fontSize:9}}>{currentPrice>0?((p/currentPrice-1)*100).toFixed(1)+"%":""}</span>
+                  </div>
+                )) : <div style={{fontSize:9,color:"#4b5563"}}>—</div>}
+              </div>
             </div>
-            <div style={{background:"rgba(239,68,68,0.05)",border:"1px solid rgba(239,68,68,0.15)",borderRadius:7,padding:"6px 8px"}}>
-              <div style={{fontSize:9,fontWeight:600,color:"#ef4444",marginBottom:4}}>🔴 저항선</div>
-              {srLevels?.resistances?.map((p,i)=>(
-                <div key={i} style={{fontSize:10,color:"#b0b8c8",padding:"2px 0",display:"flex",justifyContent:"space-between"}}>
-                  <span>{stock?.fmt(p)}</span>
-                  <span style={{color:"#4b5563",fontSize:9}}>{l.close>0?((p/l.close-1)*100).toFixed(1)+"%":""}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
         </div>
       )}
       {/* 주요 지표 */}
@@ -458,7 +429,7 @@ events 규칙:
       {/* 매수가 설정 */}
       <div style={{padding:12,borderBottom:"1px solid #2d3040"}}>
         <div style={{fontSize:10,fontWeight:600,color:"#4b5563",letterSpacing:0.8,textTransform:"uppercase",marginBottom:8}}>매수가 설정</div>
-        {purchasePrice!=null&&(
+        {purchasePrice!=null&&currentPrice>0&&(
           <div style={{fontSize:11,color:"#7c8599",marginBottom:6}}>
             매수가 <b style={{color:currentPrice>=purchasePrice?"#22c55e":"#ef4444"}}>{stock?.fmt(purchasePrice)}</b>
             {" "}<span style={{color:currentPrice>=purchasePrice?"#22c55e":"#ef4444"}}>({pSign((currentPrice/purchasePrice-1)*100)}{nf((currentPrice/purchasePrice-1)*100)}%)</span>
@@ -513,9 +484,7 @@ events 규칙:
                 {analysis.news.map((n,i)=>(
                   <div key={i} style={{background:"#1a1d27",borderRadius:6,padding:"6px 8px",marginBottom:4}}>
                     <div style={{display:"flex",gap:5}}>
-                      <span style={{color:n.sentiment==="positive"?"#22c55e":n.sentiment==="negative"?"#ef4444":"#f59e0b",fontSize:9,marginTop:1}}>
-                        {n.sentiment==="positive"?"▲":n.sentiment==="negative"?"▼":"●"}
-                      </span>
+                      <span style={{color:n.sentiment==="positive"?"#22c55e":n.sentiment==="negative"?"#ef4444":"#f59e0b",fontSize:9,marginTop:1,flexShrink:0}}>{n.sentiment==="positive"?"▲":n.sentiment==="negative"?"▼":"●"}</span>
                       <div><div style={{fontSize:11,fontWeight:500,lineHeight:1.5}}>{n.title}</div>{n.impact&&<div style={{fontSize:10,color:"#7c8599",marginTop:1}}>{n.impact}</div>}</div>
                     </div>
                   </div>
@@ -529,7 +498,6 @@ events 규칙:
                 {analysis.risks?.length>0&&(<div style={{background:"rgba(239,68,68,0.05)",border:"1px solid rgba(239,68,68,0.15)",borderRadius:8,padding:"7px 9px"}}><div style={{fontSize:10,fontWeight:600,color:"#ef4444",marginBottom:4}}>주요 리스크</div>{analysis.risks.map((r,i)=><div key={i} style={{fontSize:10,color:"#b0b8c8",marginBottom:2}}>• {r}</div>)}</div>)}
               </div>
             )}
-            {/* 거시경제 */}
             {analysis.macro?.length>0&&(
               <div style={{background:"#1a1d27",borderRadius:8,padding:"7px 9px"}}>
                 <div style={{fontSize:10,fontWeight:600,color:"#7c8599",marginBottom:4}}>거시 경제</div>
@@ -545,8 +513,7 @@ events 규칙:
 
   return (
     <div style={{background:"#0f1117",color:"#e0e6ed",fontFamily:"system-ui,-apple-system,sans-serif",display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"}}>
-
-      {/* ── 헤더 ── */}
+      {/* 헤더 */}
       <div style={{background:"#13161f",borderBottom:"1px solid #2d3040",padding:isMobile?"8px 12px":"10px 16px",flexShrink:0}}>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:isMobile?6:0}}>
           <div style={{fontWeight:700,fontSize:13,color:"#3b82f6"}}>📊 StockAnalyst</div>
@@ -555,7 +522,6 @@ events 규칙:
             <IdxBadge label="NASDAQ" value={indices?.nasdaq?.value} pct={indices?.nasdaq?.pct}/>
           </div>
         </div>
-        {/* 종목 탭 */}
         <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:2,WebkitOverflowScrolling:"touch"}}>
           {Object.values(stocks).map(s=>(
             <div key={s.symbol} style={{display:"flex",alignItems:"center",flexShrink:0}}>
@@ -566,8 +532,7 @@ events 규칙:
           <button onClick={()=>setShowAdd(true)} style={{padding:"4px 10px",borderRadius:16,border:"1px solid #2d3040",background:"transparent",color:"#22c55e",cursor:"pointer",fontSize:13,fontWeight:700,flexShrink:0}}>+</button>
         </div>
       </div>
-
-      {/* ── 가격바 ── */}
+      {/* 가격바 */}
       <div style={{background:"#13161f",padding:isMobile?"6px 12px":"8px 16px",borderBottom:"1px solid #2d3040",flexShrink:0}}>
         {dataStatus==="loading"
           ?<span style={{color:"#7c8599",fontSize:12}}>📡 수신 중…</span>
@@ -577,13 +542,11 @@ events 규칙:
               {safePct>=0?"▲":"▼"} {stock?.currency==="KRW"?Math.abs(Math.round(safeAbs)).toLocaleString("ko-KR"):Math.abs(safeAbs).toFixed(2)} ({Math.abs(safePct).toFixed(2)}%)
             </span>
             {purchasePrice!=null&&currentPrice>0&&(
-              <span style={{fontSize:11,color:"#7c8599"}}>
-                매수가 {stock?.fmt(purchasePrice)} <span style={{color:currentPrice>=purchasePrice?"#22c55e":"#ef4444",fontWeight:600}}>{nf((currentPrice/purchasePrice-1)*100)}%</span>
-              </span>
+              <span style={{fontSize:11,color:"#7c8599"}}>매수가 {stock?.fmt(purchasePrice)} <span style={{color:currentPrice>=purchasePrice?"#22c55e":"#ef4444",fontWeight:600}}>{nf((currentPrice/purchasePrice-1)*100)}%</span></span>
             )}
             <div style={{marginLeft:"auto",display:"flex",gap:4,alignItems:"center"}}>
               <span style={{fontSize:9,padding:"2px 6px",borderRadius:8,background:dataStatus==="real"?"rgba(34,197,94,0.1)":"rgba(245,158,11,0.1)",color:dataStatus==="real"?"#22c55e":"#f59e0b",border:`1px solid ${dataStatus==="real"?"rgba(34,197,94,0.3)":"rgba(245,158,11,0.3)"}`}}>{dataStatus==="real"?"● 실시간":"● 시뮬"}</span>
-              {!isMobile&&[[22,"1M"],[66,"3M"],[130,"6M"]].map(([r,label])=>(
+              {[[22,"1M"],[66,"3M"],[130,"6M"]].map(([r,label])=>(
                 <button key={r} onClick={()=>setRange(r)} style={{padding:"2px 8px",borderRadius:5,border:`1px solid ${range===r?"#3b82f6":"#2d3040"}`,background:range===r?"rgba(59,130,246,0.1)":"transparent",color:range===r?"#3b82f6":"#7c8599",cursor:"pointer",fontSize:10}}>{label}</button>
               ))}
               <button onClick={refreshQuote} style={{padding:"2px 8px",borderRadius:5,border:"1px solid #2d3040",background:"transparent",color:"#7c8599",cursor:"pointer",fontSize:12,transform:isRefreshing?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.3s"}}>🔄</button>
@@ -591,16 +554,8 @@ events 규칙:
             </div>
           </div>
         }
-        {isMobile&&dataStatus!=="loading"&&(
-          <div style={{display:"flex",gap:4,marginTop:4}}>
-            {[[22,"1개월"],[66,"3개월"],[130,"6개월"]].map(([r,label])=>(
-              <button key={r} onClick={()=>setRange(r)} style={{padding:"2px 8px",borderRadius:5,border:`1px solid ${range===r?"#3b82f6":"#2d3040"}`,background:range===r?"rgba(59,130,246,0.1)":"transparent",color:range===r?"#3b82f6":"#7c8599",cursor:"pointer",fontSize:10}}>{label}</button>
-            ))}
-          </div>
-        )}
       </div>
-
-      {/* ── 메인 ── */}
+      {/* 메인 */}
       {isMobile ? (
         <>
           {/* 상단 탭바 */}
@@ -621,8 +576,7 @@ events 규칙:
           {AnalysisPanel}
         </div>
       )}
-
-      {/* ── 종목 추가 모달 ── */}
+      {/* 종목 추가 모달 */}
       {showAdd&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}} onClick={e=>e.target===e.currentTarget&&setShowAdd(false)}>
           <div style={{background:"#1a1d27",borderRadius:16,padding:24,width:"100%",maxWidth:360,border:"1px solid #2d3040"}}>
