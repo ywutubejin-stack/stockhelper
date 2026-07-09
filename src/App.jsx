@@ -232,8 +232,27 @@ events 규칙:
       const prompt=`${stock.name}(${stock.symbol}) 분석. 현재가: ${stock.fmt(currentPrice)} | 전일비: ${pSign(safePct)}${nf(safePct)}%${purchasePrice?` | 매수가: ${stock.fmt(purchasePrice)} (${nf((currentPrice/purchasePrice-1)*100)}%)`:""}. RSI: ${l.rsi} | 매수신호: ${sigs.bullPct}%.`;
       const res=await fetch(ANALYZE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,systemPrompt,symbol:stock.symbol,stockName:stock.name})});
       const{text,error}=await res.json();if(error)throw new Error(error);
-      try{setAnalysis(JSON.parse(text.replace(/```json|```/g,"").trim()));}
-      catch{setAnalysis({error:true,reasoning:text||"파싱 오류",recommendation:"HOLD",news:[],macro:[],risks:[],catalysts:[],events:[],confidence:50});}
+      try{
+        // 마크다운 제거 후 JSON 추출
+        let clean = text.replace(/```json|```/g,"").trim();
+        // { 부터 마지막 } 까지만 추출 (잘린 경우 대비)
+        const start = clean.indexOf("{");
+        let end = clean.lastIndexOf("}");
+        if(start !== -1 && end !== -1 && end > start){
+          clean = clean.substring(start, end + 1);
+        }
+        setAnalysis(JSON.parse(clean));
+      }catch{
+        // 파싱 실패 시 텍스트에서 핵심만 추출해서 표시
+        const recMatch = text.match(/"recommendation"\s*:\s*"(BUY|SELL|HOLD)"/);
+        const reasonMatch = text.match(/"reasoning"\s*:\s*"([^"]{10,})"/);
+        setAnalysis({
+          error:false,
+          recommendation: recMatch?.[1] || "HOLD",
+          reasoning: reasonMatch?.[1] || text.substring(0,300) || "분석 완료 (표시 오류)",
+          news:[], macro:[], risks:[], catalysts:[], events:[], confidence:50
+        });
+      }
     }catch(err){setAnalysis({error:true,reasoning:err.message,recommendation:"HOLD",news:[],macro:[],risks:[],catalysts:[],events:[],confidence:50});}
     finally{setAiLoading(false);}
   },[l,sigs,stock,currentPrice,safePct,purchasePrice,isMobile]);
