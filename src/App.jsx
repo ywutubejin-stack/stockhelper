@@ -37,38 +37,37 @@ const calcRSI = (arr, n=14) => arr.map((_,i)=>{if(i<n)return null;let g=0,l=0;fo
 const calcBB = (arr, n=20) => { const m=calcSMA(arr,n);return arr.map((_,i)=>{if(!m[i])return{};const std=Math.sqrt(arr.slice(i-n+1,i+1).reduce((a,v)=>a+(v-m[i])**2,0)/n);return{u:m[i]+2*std,mid:m[i],lo:m[i]-2*std};});};
 const calcMACD = arr => { const e12=calcEMA(arr,12),e26=calcEMA(arr,26),line=e12.map((v,i)=>v-e26[i]),sig=calcEMA(line,9);return{line,sig,hist:line.map((v,i)=>v-sig[i])};};
 
-function calcSupportResistance(closes, lookback=5) {
-  // 최근 60거래일(약 3개월)만 사용 — 오래된 데이터는 의미 없음
-  const recent = closes.slice(-60);
+function calcSupportResistance(closes, lookback=3) {
+  if(closes.length < lookback*2+2) return {supports:[], resistances:[]};
+  const recent = closes.slice(-Math.min(60, closes.length));
   const currentPrice = closes[closes.length - 1];
   const levels = [];
 
   for (let i=lookback; i<recent.length-lookback; i++) {
     const left=recent.slice(i-lookback,i), right=recent.slice(i+1,i+lookback+1);
-    if(recent[i]<=Math.min(...left)&&recent[i]<=Math.min(...right))
-      levels.push({price:recent[i],type:"support"});
-    if(recent[i]>=Math.max(...left)&&recent[i]>=Math.max(...right))
-      levels.push({price:recent[i],type:"resistance"});
+    const isMin=recent[i]<=Math.min(...left)&&recent[i]<=Math.min(...right);
+    const isMax=recent[i]>=Math.max(...left)&&recent[i]>=Math.max(...right);
+    if(isMin) levels.push({price:recent[i],type:"support",idx:i});
+    if(isMax) levels.push({price:recent[i],type:"resistance",idx:i});
   }
 
   const cluster=(arr,type)=>{
     const r=[];
-    for(const l of arr.filter(x=>x.type===type)){
-      const ex=r.find(x=>Math.abs(x.price-l.price)/l.price<0.025);
-      if(ex){ex.count++;ex.price=(ex.price*ex.count+l.price)/(ex.count+1);}
-      else r.push({price:l.price,count:1});
+    for(const l of arr.filter(x=>x.type===type).sort((a,b)=>b.idx-a.idx)){
+      const ex=r.find(x=>Math.abs(x.price-l.price)/l.price<0.03);
+      if(ex){ex.count++;ex.price=(ex.price+l.price)/2;}
+      else r.push({price:l.price,count:1,idx:l.idx});
     }
-    return r.sort((a,b)=>b.count-a.count).slice(0,4).map(x=>x.price).sort((a,b)=>b-a);
+    return r.sort((a,b)=>b.count-a.count).slice(0,5).map(x=>x.price);
   };
 
   const allSup = cluster(levels,"support");
   const allRes = cluster(levels,"resistance");
+  const margin = 0.003;
 
   return {
-    // 지지선: 현재가 아래만
-    supports:    allSup.filter(p=>p<currentPrice*0.999).sort((a,b)=>b-a).slice(0,3),
-    // 저항선: 현재가 위만
-    resistances: allRes.filter(p=>p>currentPrice*1.001).sort((a,b)=>a-b).slice(0,3),
+    supports:    allSup.filter(p=>p<currentPrice*(1-margin)).sort((a,b)=>b-a).slice(0,3),
+    resistances: allRes.filter(p=>p>currentPrice*(1+margin)).sort((a,b)=>a-b).slice(0,3),
   };
 }
 
@@ -304,9 +303,9 @@ events 규칙:
               <Line type="monotone" dataKey="bbM" stroke="#38bdf8" strokeWidth={0.8} dot={false} opacity={0.3} strokeDasharray="4 3"/>
               <Line type="monotone" dataKey="bbL" stroke="#38bdf8" strokeWidth={1} dot={false} opacity={0.55}/>
               {/* 지지선 */}
-              {srLevels?.supports?.map((p,i)=><ReferenceLine key={"s"+i} y={p} stroke="#22c55e" strokeDasharray="6 3" strokeOpacity={0.6} label={{value:stock?.fmt(p),fill:"#22c55e",fontSize:9,position:"right"}}/>)}
+              {srLevels?.supports?.map((p,i)=><ReferenceLine key={"s"+i} y={p} stroke="#22c55e" strokeDasharray="5 3" strokeWidth={1.5} strokeOpacity={0.8} ifOverflow="extendDomain" label={{value:stock?.fmt(p),fill:"#22c55e",fontSize:8,position:"insideBottomRight"}}/>)}
               {/* 저항선 */}
-              {srLevels?.resistances?.map((p,i)=><ReferenceLine key={"r"+i} y={p} stroke="#ef4444" strokeDasharray="6 3" strokeOpacity={0.6} label={{value:stock?.fmt(p),fill:"#ef4444",fontSize:9,position:"right"}}/>)}
+              {srLevels?.resistances?.map((p,i)=><ReferenceLine key={"r"+i} y={p} stroke="#ef4444" strokeDasharray="5 3" strokeWidth={1.5} strokeOpacity={0.8} ifOverflow="extendDomain" label={{value:stock?.fmt(p),fill:"#ef4444",fontSize:8,position:"insideTopRight"}}/>)}
               <Line type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false}/>
               <Line type="monotone" dataKey="ma5"   stroke="#34d399" strokeWidth={1.5} dot={false}/>
               <Line type="monotone" dataKey="ma20"  stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="5 2"/>
