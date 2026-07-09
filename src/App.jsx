@@ -571,7 +571,7 @@ export default function App() {
           </div>
         </>
       ) : (
-        <div style={{flex:1,display:"grid",gridTemplateColumns:"2fr 3fr",overflow:"hidden"}}>
+        <div style={{flex:1,display:"grid",gridTemplateColumns:"3fr 2fr",overflow:"hidden"}}>
           {ChartsPanel}
           {AnalysisPanel}
         </div>
