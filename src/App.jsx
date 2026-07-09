@@ -604,20 +604,20 @@ events 규칙:
       {/* ── 메인 ── */}
       {isMobile ? (
         <>
-          <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-            {mobileTab==="chart" ? ChartsPanel : AnalysisPanel}
-          </div>
-          {/* 하단 탭바 */}
-          <div style={{background:"#13161f",borderTop:"1px solid #2d3040",display:"flex",flexShrink:0}}>
+          {/* 상단 탭바 */}
+          <div style={{background:"#13161f",borderBottom:"1px solid #2d3040",display:"flex",flexShrink:0}}>
             {[["chart","📊 차트"],["analysis","🤖 분석"]].map(([tab,label])=>(
-              <button key={tab} onClick={()=>setMobileTab(tab)} style={{flex:1,padding:"12px 0",background:mobileTab===tab?"rgba(59,130,246,0.1)":"transparent",color:mobileTab===tab?"#3b82f6":"#7c8599",border:"none",cursor:"pointer",fontSize:13,fontWeight:mobileTab===tab?600:400,borderTop:mobileTab===tab?"2px solid #3b82f6":"2px solid transparent"}}>
+              <button key={tab} onClick={()=>setMobileTab(tab)} style={{flex:1,padding:"10px 0",background:mobileTab===tab?"rgba(59,130,246,0.1)":"transparent",color:mobileTab===tab?"#3b82f6":"#7c8599",border:"none",cursor:"pointer",fontSize:13,fontWeight:mobileTab===tab?600:400,borderBottom:mobileTab===tab?"2px solid #3b82f6":"2px solid transparent"}}>
                 {label}
               </button>
             ))}
           </div>
+          <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+            {mobileTab==="chart" ? ChartsPanel : AnalysisPanel}
+          </div>
         </>
       ) : (
-        <div style={{flex:1,display:"grid",gridTemplateColumns:"1fr 300px",overflow:"hidden"}}>
+        <div style={{flex:1,display:"grid",gridTemplateColumns:"2fr 3fr",overflow:"hidden"}}>
           {ChartsPanel}
           {AnalysisPanel}
         </div>
