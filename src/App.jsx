@@ -487,13 +487,13 @@ events 규칙:
               <div style={{background:"#1a1d27",borderRadius:10,border:"1px solid #2d3040",padding:"10px 12px"}}>
                 <div style={{fontSize:11,fontWeight:600,color:"#e0e6ed",marginBottom:8}}>📅 주요 일정</div>
                 {analysis.events.map((e,i)=>(
-                  <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start",padding:"6px 8px",borderRadius:7,marginBottom:5,background:e.impact==="positive"?"rgba(34,197,94,0.06)":e.impact==="negative"?"rgba(239,68,68,0.06)":"rgba(255,255,255,0.03)",border:`1px solid ${e.impact==="positive"?"rgba(34,197,94,0.2)":e.impact==="negative"?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.05)"}`}}>
-                    <div style={{flexShrink:0,minWidth:44,fontSize:9,fontWeight:700,color:e.impact==="positive"?"#22c55e":e.impact==="negative"?"#ef4444":"#f59e0b",paddingTop:1}}>{e.date}</div>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:11,fontWeight:600,color:"#e0e6ed",lineHeight:1.4}}>{e.title}</div>
-                      {e.detail&&<div style={{fontSize:10,color:"#7c8599",marginTop:2}}>{e.detail}</div>}
+                  <div key={i} style={{padding:"7px 9px",borderRadius:7,marginBottom:5,background:e.impact==="positive"?"rgba(34,197,94,0.06)":e.impact==="negative"?"rgba(239,68,68,0.06)":"rgba(255,255,255,0.03)",border:`1px solid ${e.impact==="positive"?"rgba(34,197,94,0.2)":e.impact==="negative"?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.05)"}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                      <span style={{fontSize:10}}>{e.impact==="positive"?"🟢":e.impact==="negative"?"🔴":"🟡"}</span>
+                      <span style={{fontSize:9,fontWeight:700,color:e.impact==="positive"?"#22c55e":e.impact==="negative"?"#ef4444":"#f59e0b"}}>{e.date}</span>
                     </div>
-                    <div style={{fontSize:12}}>{e.impact==="positive"?"🟢":e.impact==="negative"?"🔴":"🟡"}</div>
+                    <div style={{fontSize:12,fontWeight:600,color:"#e0e6ed",lineHeight:1.4,marginBottom:3}}>{e.title}</div>
+                    {e.detail&&<div style={{fontSize:10,color:"#7c8599",lineHeight:1.5}}>{e.detail}</div>}
                   </div>
                 ))}
               </div>
