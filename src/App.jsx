@@ -452,22 +452,6 @@ export default function App() {
         {aiLoading&&(<div style={{textAlign:"center",padding:"20px 0",color:"#7c8599"}}><div style={{fontSize:24,marginBottom:6}}>⏳</div><div style={{fontSize:12}}>분석 중…</div></div>)}
         {analysis&&(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {/* 주요 일정 */}
-            {analysis.events?.length>0&&(
-              <div style={{background:"#1a1d27",borderRadius:10,border:"1px solid #2d3040",padding:"10px 12px"}}>
-                <div style={{fontSize:11,fontWeight:600,color:"#e0e6ed",marginBottom:8}}>📅 주요 일정</div>
-                {analysis.events.map((e,i)=>(
-                  <div key={i} style={{padding:"7px 9px",borderRadius:7,marginBottom:5,background:e.impact==="positive"?"rgba(34,197,94,0.06)":e.impact==="negative"?"rgba(239,68,68,0.06)":"rgba(255,255,255,0.03)",border:`1px solid ${e.impact==="positive"?"rgba(34,197,94,0.2)":e.impact==="negative"?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.05)"}`}}>
-                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
-                      <span style={{fontSize:10}}>{e.impact==="positive"?"🟢":e.impact==="negative"?"🔴":"🟡"}</span>
-                      <span style={{fontSize:9,fontWeight:700,color:e.impact==="positive"?"#22c55e":e.impact==="negative"?"#ef4444":"#f59e0b"}}>{e.date}</span>
-                    </div>
-                    <div style={{fontSize:12,fontWeight:600,color:"#e0e6ed",lineHeight:1.4,marginBottom:3}}>{e.title}</div>
-                    {e.detail&&<div style={{fontSize:10,color:"#7c8599",lineHeight:1.5}}>{e.detail}</div>}
-                  </div>
-                ))}
-              </div>
-            )}
             {/* 추천 */}
             <div style={{background:`rgba(${analysis.recommendation==="BUY"?"34,197,94":analysis.recommendation==="SELL"?"239,68,68":"245,158,11"},0.07)`,border:`1px solid ${recColor}35`,borderRadius:10,padding:"10px 12px"}}>
               <div style={{fontSize:16,fontWeight:700,color:recColor,textAlign:"center"}}>{analysis.recommendation==="BUY"?"🟢 매수":analysis.recommendation==="SELL"?"🔴 매도":"🟡 관망"}</div>
@@ -502,6 +486,22 @@ export default function App() {
               <div style={{background:"#1a1d27",borderRadius:8,padding:"7px 9px"}}>
                 <div style={{fontSize:10,fontWeight:600,color:"#7c8599",marginBottom:4}}>거시 경제</div>
                 {analysis.macro.map((m,i)=><div key={i} style={{fontSize:10,color:"#b0b8c8",padding:"2px 0",borderBottom:i<analysis.macro.length-1?"1px solid #2d3040":"none"}}>• {m}</div>)}
+              </div>
+            )}
+            {/* 주요 일정 */}
+            {analysis.events?.length>0&&(
+              <div style={{background:"#1a1d27",borderRadius:10,border:"1px solid #2d3040",padding:"10px 12px"}}>
+                <div style={{fontSize:11,fontWeight:600,color:"#e0e6ed",marginBottom:8}}>📅 주요 일정</div>
+                {analysis.events.map((e,i)=>(
+                  <div key={i} style={{padding:"7px 9px",borderRadius:7,marginBottom:5,background:e.impact==="positive"?"rgba(34,197,94,0.06)":e.impact==="negative"?"rgba(239,68,68,0.06)":"rgba(255,255,255,0.03)",border:`1px solid ${e.impact==="positive"?"rgba(34,197,94,0.2)":e.impact==="negative"?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.05)"}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                      <span style={{fontSize:10}}>{e.impact==="positive"?"🟢":e.impact==="negative"?"🔴":"🟡"}</span>
+                      <span style={{fontSize:9,fontWeight:700,color:e.impact==="positive"?"#22c55e":e.impact==="negative"?"#ef4444":"#f59e0b"}}>{e.date}</span>
+                    </div>
+                    <div style={{fontSize:12,fontWeight:600,color:"#e0e6ed",lineHeight:1.4,marginBottom:3}}>{e.title}</div>
+                    {e.detail&&<div style={{fontSize:10,color:"#7c8599",lineHeight:1.5}}>{e.detail}</div>}
+                  </div>
+                ))}
               </div>
             )}
             <button onClick={runAnalysis} style={{width:"100%",padding:8,borderRadius:6,border:"1px solid #2d3040",background:"transparent",color:"#7c8599",cursor:"pointer",fontSize:11}}>🔄 재분석</button>
